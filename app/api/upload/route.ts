@@ -11,6 +11,9 @@ const ALLOWED_TYPES = [
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
+// Note: file.type can be spoofed by clients. In production, consider implementing
+// server-side file type detection using file headers/magic numbers for more robust validation.
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();

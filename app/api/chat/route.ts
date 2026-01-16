@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { uploadedFiles } from "@/lib/fileStorage";
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,6 +10,17 @@ export async function POST(request: NextRequest) {
     if (!query) {
       return new Response(
         JSON.stringify({ error: "Query parameter is required" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Validate document_id if provided
+    if (document_id && !uploadedFiles.has(document_id)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid document_id" }),
         {
           status: 400,
           headers: { "Content-Type": "application/json" },
@@ -55,7 +67,7 @@ export async function POST(request: NextRequest) {
     // Return streaming response
     return new Response(stream, {
       headers: {
-        "Content-Type": "text/event-stream",
+        "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
       },
