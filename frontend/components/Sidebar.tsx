@@ -6,13 +6,7 @@ import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { ChatSummary } from "@/types/chat";
 import ProfileButton from "./ProfileIcon";
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  conversations: ChatSummary[];
-}
+import { User } from "@/types/user";
 
 const Sidebar = () => {
   const router = useRouter();
