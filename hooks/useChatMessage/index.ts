@@ -1,11 +1,22 @@
 import { useState, useRef, useEffect } from "react";
 import { ChatMessage } from "@/types/chat";
 import { useChatService } from "@/services/useChatService";
-import { uploadDocument } from "@/services/uploadService";
+
+function parseBackendResponse(rawResponse: string): string {
+  try {
+    const data = JSON.parse(rawResponse);
+    const responseText = data.response || data.answer || data.content || JSON.stringify(data);
+    
+    return responseText.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  } catch {
+    return rawResponse;
+  }
+}
 
 export function useChatMessage(initialMessages: ChatMessage[] = []) {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
-  const { sendMessage } = useChatService();
+  const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
+  const { sendMessage, uploadFile } = useChatService();
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -14,84 +25,87 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
     }
   }, [messages]);
 
-  const addMessage = (msg: ChatMessage) => {
+  const addMessage = (msg: ChatMessage) =>
     setMessages((prev) => [...prev, msg]);
-  };
 
   const sendUserMessage = async (
-    text: string,
-    file: File | null,
-    preUploadedDocumentId?: string,
-    preUploadedFilename?: string
+    text: string, 
+    file: File | null, 
+    filenameOverride?: string,
+    explicitDocId?: string
   ) => {
-    let documentId: string | undefined = preUploadedDocumentId;
-    let filename: string | undefined = preUploadedFilename;
-
-    if (file && !preUploadedDocumentId) {
-      try {
-        const uploaded = await uploadDocument(file);
-        documentId = uploaded.document_id;
-        filename = file.name;
-      } catch (err) {
-        console.error("Document upload failed:", err);
-        return;
-      }
-    }
+    
+    const displayFilename = file ? file.name : filenameOverride;
 
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
       text,
       isUser: true,
       timeStamp: Date.now(),
-      ...(documentId ? { documentId } : {}),
-      ...(filename ? { filename } : {}),
+      ...(displayFilename ? { filename: displayFilename } : {}),
     };
     addMessage(userMsg);
 
     const botMsgId = crypto.randomUUID();
-    const botMsg: ChatMessage = {
+    addMessage({
       id: botMsgId,
       text: "Thinking...",
       isUser: false,
       timeStamp: Date.now(),
-    };
-    addMessage(botMsg);
+    });
 
-    let accumulated = "";
-    await sendMessage(
-      text,
-      documentId,
-      (chunk: string) => {
-        accumulated += chunk;
-        setMessages((prev) =>
-          prev.map((m) => (m.id === botMsgId ? { ...m, text: accumulated } : m))
-        );
-      },
-      () => {}
-    );
+    try {
+      let docIdToUse = explicitDocId || activeDocumentId;
+
+      if (file) {
+        const uploadRes = await uploadFile(file);
+        docIdToUse = uploadRes.document_id;
+        setActiveDocumentId(docIdToUse); 
+      } else if (explicitDocId) {
+        setActiveDocumentId(explicitDocId); 
+      }
+
+      const finalDocId = docIdToUse || null;
+
+      const rawResponse = await sendMessage(text, finalDocId);
+      const botResponseText = parseBackendResponse(rawResponse);
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === botMsgId ? { ...m, text: botResponseText } : m
+        )
+      );
+    } catch (err) {
+      console.error("Chat Error:", err);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === botMsgId
+            ? { ...m, text: "Error: Something went wrong. Please try again." }
+            : m
+        )
+      );
+    }
   };
 
   const regenerateMessage = (msg: ChatMessage) => {
     if (!msg.isUser) {
-      // Find the related user message
-      const relatedUserMsg = messages.find(
-        (m) =>
-          m.isUser &&
-          (m.documentId === msg.documentId || m.text === msg.text)
-      );
-
-      if (relatedUserMsg) {
-        // Send a new bot response for the same user input
-        sendUserMessage(
-          relatedUserMsg.text,
-          null,
-          relatedUserMsg.documentId,
-          relatedUserMsg.filename
-        );
+      const idx = messages.findIndex((m) => m.id === msg.id);
+      if (idx > 0) {
+        const lastUserMsg = messages[idx - 1];
+        if (lastUserMsg.isUser) {
+          sendUserMessage(lastUserMsg.text, null);
+        }
       }
     }
   };
 
+  const setDocumentId = (id: string) => setActiveDocumentId(id);
 
-  return { messages, sendUserMessage, containerRef, regenerateMessage };
+  return { 
+    messages, 
+    sendUserMessage, 
+    containerRef, 
+    regenerateMessage,
+    setDocumentId 
+  };
 }

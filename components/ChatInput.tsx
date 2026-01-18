@@ -56,10 +56,10 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage }) => {
   };
 
   return (
-    <div className="w-full max-w-3xl mx-auto px-2 sm:px-4">
-      <div className="bg-neutral-800 rounded-2xl border border-neutral-700 flex flex-col justify-between px-2 sm:px-4 py-3 min-h-18">
+    <div className="w-full max-w-3xl mx-auto px-4">
+      <div className="bg-neutral-800 rounded-2xl border border-neutral-700 flex flex-col justify-between px-4 py-3 min-h-18">
         {fileName && (
-          <div className="relative inline-flex items-center gap-2 text-sm text-neutral-200 mb-2 bg-neutral-700 px-2 py-2 rounded-full shadow max-w-48 sm:max-w-64">
+          <div className="relative inline-flex items-center gap-2 text-sm text-neutral-200 mb-2 bg-neutral-700 px-2 py-2 rounded-full shadow max-w-48">
             <FiFileText size={16} className="text-neutral-300" />
             <span className="truncate flex-1 pr-6">{fileName}</span>
             <button
@@ -98,6 +98,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage }) => {
               title="Upload file"
               ref={fileInputRef}
               type="file"
+              accept="application/pdf"
               style={{ display: "none" }}
               onChange={handleFileChange}
             />

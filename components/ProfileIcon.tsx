@@ -74,8 +74,8 @@ const ProfileButton = ({
             </div>
           </div>
           <div className="border-t border-[#23242b] my-1" />
-          <div className="text-xs text-blue-500 cursor-not-allowed hover:bg-[#1c1f27] px-3 py-2 rounded transition-colors">
-            Log in/Sign up
+          <div className="text-xs text-red-500 cursor-pointer hover:bg-[#1c1f27] px-3 py-2 rounded transition-colors">
+            Log out
           </div>
         </div>
       )}

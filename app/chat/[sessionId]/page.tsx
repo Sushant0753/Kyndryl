@@ -2,7 +2,7 @@
 
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useChatMessage } from "@/hooks/useChatMessage";
+import { useChatMessage } from "@/hooks/useChatMessage"; 
 import { ChatMessage } from "@/types/chat";
 import ChatInput from "@/components/ChatInput";
 import { FiFileText } from "react-icons/fi";
@@ -12,86 +12,103 @@ import { LuCheck } from "react-icons/lu";
 
 export default function ChatPage() {
   const { sessionId } = useParams();
-  const { messages, sendUserMessage, containerRef, regenerateMessage } = useChatMessage();
+  const { messages, sendUserMessage, containerRef, regenerateMessage, setDocumentId } =
+    useChatMessage();
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
 
+  // Restore session from Home page
   useEffect(() => {
-    // Check for a first message (set by Home page)
-    const firstMessageKey = `first-message-${sessionId}`;
-    const firstMessageRaw = window.sessionStorage.getItem(firstMessageKey);
-    if (firstMessageRaw) {
-      const { text, documentId, filename } = JSON.parse(firstMessageRaw);
-      sendUserMessage(text, null, documentId, filename); // Pass doc info as extra args
-      window.sessionStorage.removeItem(firstMessageKey);
-    }
-  }, [sessionId, sendUserMessage]);
+    const key = `first-message-${sessionId}`;
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return;
 
-  const copyMessage = (text: string, messageId: string) => {
+    try {
+      const parsed = JSON.parse(raw);
+      
+      // If we have an ID from the Home upload, pass it explicitly to the first message
+      // This ensures the first request uses the ID immediately without waiting for state updates
+      if (parsed.text) {
+        sendUserMessage(
+          parsed.text, 
+          null, // No new file object (it's already on server)
+          parsed.filename, // Pass filename string for UI chip
+          parsed.documentId // Pass ID explicitly for this call
+        );
+      } else if (parsed.documentId) {
+        // If there was no text (edge case), just set the ID
+        setDocumentId(parsed.documentId);
+      }
+      
+    } catch (err) {
+      console.error("Failed to restore initial message:", err);
+    } finally {
+      sessionStorage.removeItem(key);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]); // Run once on mount
+
+  const copyMessage = (text: string, id: string) => {
     navigator.clipboard.writeText(text).then(() => {
-      setCopiedStates((prev) => ({ ...prev, [messageId]: true }));
+      setCopiedStates((s) => ({ ...s, [id]: true }));
       setTimeout(() => {
-        setCopiedStates((prev) => ({ ...prev, [messageId]: false }));
-      }, 2000);
+        setCopiedStates((s) => ({ ...s, [id]: false }));
+      }, 1500);
     });
   };
 
   return (
     <div className="flex flex-col h-screen bg-dots">
+      {/* Chat messages */}
       <div
         ref={containerRef}
-        className="
-          flex-1 overflow-y-auto overflow-x-hidden
-          px-2 py-4 space-y-4
-          sm:px-4 sm:py-6
-          md:pl-32 md:pr-16
-          w-full
-        "
+        className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 space-y-4 pl-32 pr-16 w-full"
       >
         {messages.map((msg: ChatMessage) => (
           <div
             key={msg.id}
             className={`flex ${msg.isUser ? "justify-end" : "justify-start"}`}
           >
-            <div
-              className={`
-                max-w-[90%] sm:max-w-[80%] md:max-w-[60%]
-                ${msg.isUser ? "" : "space-y-2"}
-              `}
-            >
-              {/* Message content */}
+            <div className={`max-w-[80%] ${msg.isUser ? "" : "space-y-2"}`}>
+              {/* Message Bubble */}
               <div
-                className={`
-                  rounded-2xl px-4 py-2 shadow break-words inline-block
-                  ${msg.isUser
+                className={`rounded-2xl px-4 py-2 shadow break-words ${
+                  msg.isUser
                     ? "bg-blue-600 text-white"
-                    : "bg-neutral-800 text-neutral-200"}
-                `}
+                    : "bg-neutral-800 text-neutral-200 inline-block"
+                }`}
               >
-                <p className="whitespace-pre-wrap break-words">{msg.text}</p>
+                <p
+                  className="whitespace-pre-wrap break-words"
+                  dangerouslySetInnerHTML={{ __html: msg.text }}
+                ></p>
 
-                {msg.filename && msg.documentId && (
-                  <div className="inline-flex items-center gap-2 text-sm text-neutral-200 mt-2 bg-neutral-700 px-2 py-2 rounded-full shadow max-w-48 sm:max-w-64">
+                {/* File chip (Only for User messages with filename) */}
+                {msg.filename && msg.isUser && (
+                  <div className="inline-flex items-center gap-2 text-sm text-neutral-200 mt-2 bg-neutral-700 px-2 py-2 rounded-full shadow max-w-48">
                     <FiFileText size={16} className="text-neutral-300" />
                     <span className="truncate flex-1 pr-6">{msg.filename}</span>
                   </div>
                 )}
               </div>
 
-              {/* Bot actions in separate div */}
+              {/* Assistant-only actions (Copy/Regenerate) */}
               {!msg.isUser && (
                 <>
                   <div className="flex gap-2 pl-2">
+                    {/* Regenerate */}
                     <button
-                      className="bg-transparent hover:bg-neutral-700/50 text-neutral-400 hover:text-neutral-200 p-2 rounded-lg transition-all duration-200 cursor-pointer"
+                      className="bg-transparent hover:bg-neutral-700/50 text-neutral-400 hover:text-neutral-200 p-2 rounded-lg transition-all cursor-pointer"
                       onClick={() => regenerateMessage(msg)}
                       title="Regenerate message"
                     >
                       <MdReplay size={16} />
                     </button>
+
+                    {/* Copy */}
                     <button
-                      className="bg-transparent hover:bg-neutral-700/50 text-neutral-400 hover:text-neutral-200 p-2 rounded-lg transition-all duration-200 cursor-pointer flex items-center gap-1"
+                      className="bg-transparent hover:bg-neutral-700/50 text-neutral-400 hover:text-neutral-200 p-2 rounded-lg transition-all cursor-pointer flex items-center gap-1"
                       onClick={() => copyMessage(msg.text, msg.id)}
-                      title={copiedStates[msg.id] ? "Copied!" : "Copy message"}
+                      title="Copy message"
                     >
                       {copiedStates[msg.id] ? (
                         <>
@@ -103,6 +120,7 @@ export default function ChatPage() {
                       )}
                     </button>
                   </div>
+
                   <div className="pl-2 mt-1">
                     <p className="text-xs text-neutral-500 italic">
                       This AI can make mistakes. Please double-check responses.
@@ -115,8 +133,12 @@ export default function ChatPage() {
         ))}
       </div>
 
-      <div className="p-2 sm:p-4">
-        <ChatInput sendUserMessage={sendUserMessage} />
+      {/* Chat Input */}
+      <div className="p-4">
+        {/* Pass sendUserMessage directly. 
+            ChatInput typically sends (text, file). 
+            Our hook handles (text, file) correctly. */}
+        <ChatInput sendUserMessage={(text, file) => sendUserMessage(text, file)} />
       </div>
     </div>
   );

@@ -1,20 +1,38 @@
-import { streamMessage } from "@/utils/streamMessage";
-
 export function useChatService() {
-  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+  const uploadFile = async (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
 
-  const sendMessage = async (
-    message: string,
-    documentId: string | undefined,
-    onStream: (chunk: string) => void,
-    onFinish: () => void
-  ) => {
-    const formData = new FormData();
-    formData.append("query", message);
-    if (documentId) formData.append("document_id", documentId);
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: fd,
+    });
 
-    await streamMessage(`${BACKEND_URL}/chat`, formData, onStream, onFinish);
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(errorText || "Upload failed");
+    }
+    
+    return await res.json();
   };
 
-  return { sendMessage };
+  const sendMessage = async (message: string, documentId: string | null) => {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: message,
+        document_id: documentId,
+      }),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(errorText || "Chat failed");
+    }
+
+    return await res.text();
+  };
+
+  return { sendMessage, uploadFile };
 }
