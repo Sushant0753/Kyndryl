@@ -91,3 +91,73 @@ class FileHandler:
         )
 
         return contents
+
+    async def validate_audio_file(self, upload_file: UploadFile) -> tuple[bytes, str]:
+        """
+        Validate uploaded audio file for STT processing
+
+        Args:
+            upload_file: FastAPI UploadFile object
+
+        Returns:
+            tuple: (File content as bytes, audio format)
+
+        Raises:
+            ValueError: If audio file is invalid
+        """
+        # Read file content
+        contents = await upload_file.read()
+
+        # Validate file size (more lenient for audio - up to 50MB)
+        max_audio_size = 50 * 1024 * 1024  # 50MB
+        file_size = len(contents)
+        if file_size > max_audio_size:
+            raise ValueError(
+                f"Audio file size ({file_size} bytes) exceeds maximum allowed size "
+                f"({max_audio_size} bytes = {max_audio_size / (1024*1024):.1f} MB)"
+            )
+
+        if file_size < 100:  # Very small file, probably not valid audio
+            raise ValueError("Audio file is too small to contain valid audio data")
+
+        # Validate file extension
+        filename = upload_file.filename or ""
+        file_extension = filename[filename.rfind('.'):] if '.' in filename else ""
+
+        supported_audio_extensions = [".wav", ".mp3", ".ogg", ".webm", ".m4a", ".flac"]
+
+        if file_extension.lower() not in supported_audio_extensions:
+            raise ValueError(
+                f"Audio file type '{file_extension}' not supported. "
+                f"Supported types: {', '.join(supported_audio_extensions)}"
+            )
+
+        # Validate MIME type
+        content_type = upload_file.content_type or ""
+        supported_audio_mime_types = [
+            "audio/wav",
+            "audio/wave",
+            "audio/x-wav",
+            "audio/mpeg",
+            "audio/mp3",
+            "audio/ogg",
+            "audio/webm",
+            "audio/x-m4a",
+            "audio/flac",
+            "audio/x-flac"
+        ]
+
+        if content_type and content_type not in supported_audio_mime_types:
+            logger.warning(f"Unusual audio MIME type: {content_type}, proceeding with validation")
+
+        # Determine audio format from extension
+        audio_format = file_extension.lower().lstrip('.')
+        if audio_format == "m4a":
+            audio_format = "mp4"  # pydub uses mp4 for m4a files
+
+        logger.info(
+            f"Audio file validation successful: {filename}, "
+            f"Size={file_size} bytes, Type={content_type}, Format={audio_format}"
+        )
+
+        return contents, audio_format

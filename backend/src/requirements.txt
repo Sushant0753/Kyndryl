@@ -10,6 +10,10 @@ pymupdf==1.25.2
 pytesseract==0.3.13
 Pillow==10.0.0
 
+# Speech-to-Text
+SpeechRecognition==3.10.0
+pydub==0.25.1
+
 # AWS/Azure storage (optional)
 boto3==1.37.1
 aioboto3==14.1.0
