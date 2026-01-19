@@ -95,6 +95,58 @@ class DocumentProcessor:
             return int(match.group(1))
         return 0
 
+    def process_ocr_text(self, extracted_text: str, document_id: str, filename: str) -> List[Dict]:
+        """
+        Process OCR-extracted text and create chunks with metadata
+
+        Args:
+            extracted_text: Text extracted from image via OCR
+            document_id: UUID for the document
+            filename: Original filename
+
+        Returns:
+            List[Dict]: List of chunk dictionaries with metadata
+        """
+        try:
+            logger.info(f"Processing OCR text: {filename}, Characters={len(extracted_text)}")
+
+            if not extracted_text.strip():
+                raise ValueError("No text content to process")
+
+            # Add image marker for context (similar to PDF page markers)
+            marked_text = (
+                f"\n--- IMAGE {filename} STARTS ---\n"
+                f"{extracted_text.strip()}"
+                f"\n--- IMAGE {filename} ENDS ---\n"
+            )
+
+            # Chunk the text
+            chunks = self.text_chunker.chunk_text(marked_text)
+
+            logger.info(f"Generated {len(chunks)} chunks from OCR text")
+
+            # Add metadata to each chunk
+            chunks_with_metadata = []
+            timestamp = datetime.utcnow().isoformat()
+
+            for idx, chunk in enumerate(chunks):
+                chunk_data = {
+                    'text': chunk,
+                    'document_id': document_id,
+                    'chunk_index': idx,
+                    'total_chunks': len(chunks),
+                    'filename': filename,
+                    'page_number': 1,  # Images are single page
+                    'timestamp': timestamp
+                }
+                chunks_with_metadata.append(chunk_data)
+
+            return chunks_with_metadata
+
+        except Exception as e:
+            logger.error(f"Failed to process OCR text for {filename}: {e}", exc_info=True)
+            raise
+
     def extract_text_only(self, blob_content: bytes) -> str:
         """
         Extract plain text from PDF without chunking

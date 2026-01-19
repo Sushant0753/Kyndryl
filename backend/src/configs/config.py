@@ -49,7 +49,9 @@ class AzureStorageSettings(BaseSettings):
 
 class DocumentSettings(BaseSettings):
     MAX_FILE_SIZE:int=10 * 1024 * 1024  # 10MB
-    ALLOWED_EXTENSIONS:List[str]=[".pdf"]
+    ALLOWED_EXTENSIONS:List[str]=[".pdf", ".jpg", ".jpeg", ".png"]
+    IMAGE_EXTENSIONS:List[str]=[".jpg", ".jpeg", ".png"]
+    OCR_LANGUAGES:str="eng+hin+ben+tam+tel"
     CHUNK_SIZE:int=512
     CHUNK_OVERLAP:int=150
 
@@ -59,5 +61,12 @@ class BhashiniSettings(BaseSettings):
     BHASHINI_API_KEY:str=secret_keys_list.get('BHASHINI_API_KEY', '')
     BHASHINI_PIPELINE_ID:str="64392f96daac500b55c543cd"
     BHASHINI_CONFIG_URL:str="https://meity-auth.ulcacontrib.org/ulca/apis/v0/model/getModelsPipeline"
+
+class ElevenLabsSettings(BaseSettings):
+    # ElevenLabs TTS Configuration
+    ELEVENLABS_API_KEY:str=secret_keys_list.get('ELEVENLABS_API_KEY', '')
+    ELEVENLABS_VOICE_ID:str=secret_keys_list.get('ELEVENLABS_VOICE_ID', 'TX3LPaxmHKxFdv7VOQHJ')
+    ELEVENLABS_API_URL:str="https://api.elevenlabs.io/v1"
+    ELEVENLABS_MODEL_ID:str="eleven_multilingual_v2"
 
 mongo_db_settings=DocumentDB()

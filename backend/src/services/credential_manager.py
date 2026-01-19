@@ -37,6 +37,10 @@ def get_secret(environment_name):
             "BHASHINI_USER_ID": os.getenv("BHASHINI_USER_ID", ""),
             "BHASHINI_API_KEY": os.getenv("BHASHINI_API_KEY", ""),
 
+            # ElevenLabs TTS
+            "ELEVENLABS_API_KEY": os.getenv("ELEVENLABS_API_KEY", ""),
+            "ELEVENLABS_VOICE_ID": os.getenv("ELEVENLABS_VOICE_ID", "TX3LPaxmHKxFdv7VOQHJ"),
+
             # Legacy
             "BUCKET_NAME": os.getenv("BUCKET_NAME", "autoflow-test"),
         }

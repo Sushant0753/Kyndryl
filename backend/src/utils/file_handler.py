@@ -1,6 +1,8 @@
 from fastapi import UploadFile
 from configs.config import DocumentSettings
 from lib.logger import logger
+from PIL import Image
+import io
 
 
 class FileHandler:
@@ -45,12 +47,43 @@ class FileHandler:
 
         # Validate MIME type
         content_type = upload_file.content_type or ""
-        valid_mime_types = ["application/pdf"]
+        valid_mime_types = [
+            "application/pdf",          # PDF files
+            "image/jpeg",               # JPEG images
+            "image/jpg",                # JPG images (alternative)
+            "image/png",                # PNG images
+        ]
 
         if content_type not in valid_mime_types:
             raise ValueError(
-                f"Invalid MIME type '{content_type}'. Expected 'application/pdf'"
+                f"Invalid MIME type '{content_type}'. Supported types: PDF (application/pdf), "
+                f"JPEG (image/jpeg), PNG (image/png)"
             )
+
+        # Additional validation for image files
+        if content_type.startswith("image/"):
+            try:
+                # Verify the file is a valid image by trying to open it with PIL
+                image = Image.open(io.BytesIO(contents))
+                image.verify()  # Verify it's a valid image
+
+                # Check image dimensions (basic sanity check)
+                # Re-open since verify() closes the image
+                image = Image.open(io.BytesIO(contents))
+                width, height = image.size
+
+                if width < 10 or height < 10:
+                    raise ValueError(f"Image dimensions too small: {width}x{height}. Minimum 10x10 pixels required.")
+
+                if width > 10000 or height > 10000:
+                    raise ValueError(f"Image dimensions too large: {width}x{height}. Maximum 10000x10000 pixels allowed.")
+
+                logger.info(f"Image validation successful: {width}x{height} pixels, Format: {image.format}")
+
+            except Exception as e:
+                if "Image dimensions" in str(e):
+                    raise  # Re-raise dimension validation errors
+                raise ValueError(f"Invalid image file: {str(e)}")
 
         logger.info(
             f"File validation successful: {filename}, "

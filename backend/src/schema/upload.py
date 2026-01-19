@@ -10,6 +10,7 @@ class UploadResponse(BaseModel):
     status: str = Field(default="processing_complete", description="Processing status")
     message: str = Field(..., description="Success message")
     timestamp: str = Field(..., description="Upload timestamp (ISO format)")
+    processing_type: str = Field(..., description="Processing type: 'pdf' or 'ocr'")
 
 
 class DocumentListResponse(BaseModel):
