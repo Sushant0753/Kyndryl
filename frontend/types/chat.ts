@@ -5,6 +5,13 @@ export type ChatMessage = {
   timeStamp: number;
   documentId?: string;
   filename?: string;
+  audioUrl?: string;
+};
+
+export type VoiceChatResponse = {
+  transcribed_text: string;
+  chat_response: string;
+  audio_url: string;
 };
 
 export type ChatSummary = {

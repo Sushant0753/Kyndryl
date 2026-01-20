@@ -8,29 +8,15 @@ export async function POST(req: NextRequest) {
     const file = formData.get("file") as File | null;
 
     if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
-    }
-
-    const MAX_SIZE_MB = 10;
-    const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
-
-    if (file.size > MAX_SIZE_BYTES) {
-      return NextResponse.json(
-        { error: `File size exceeds ${MAX_SIZE_MB}MB limit.` }, 
-        { status: 413 }
-      );
+      return NextResponse.json({ error: "No audio file provided" }, { status: 400 });
     }
 
     const backendFormData = new FormData();
-    backendFormData.append("file", file, file.name);
+    backendFormData.append("file", file, "voice_message.webm"); 
 
-    backendFormData.forEach((value, key) => {
-      console.log(`[FormData Debug] "${key}":`, value instanceof File ? value.name : value);
-    });
+    console.log(`[Proxy] Forwarding audio to ${BACKEND_URL}/api/speech/voice-chat`);
 
-    console.log(`[Proxy] Forwarding "${file.name}" to ${BACKEND_URL}/api/upload/`);
-
-    const backendRes = await fetch(`${BACKEND_URL}/api/upload/`, {
+    const backendRes = await fetch(`${BACKEND_URL}/api/speech/voice-chat`, {
       method: "POST",
       body: backendFormData,
       // @ts-expect-error FormData with file needs duplex option
@@ -39,9 +25,9 @@ export async function POST(req: NextRequest) {
 
     if (!backendRes.ok) {
       const text = await backendRes.text();
-      console.error(`[Proxy Error] Backend responded with status ${backendRes.status}:`, text);
+      console.error(`[Proxy Error] Speech API status ${backendRes.status}:`, text);
       return NextResponse.json(
-        { error: `Backend Upload Failed: ${text}` },
+        { error: `Backend Speech Failed: ${text}` },
         { status: backendRes.status }
       );
     }

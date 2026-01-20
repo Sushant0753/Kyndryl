@@ -2,17 +2,24 @@
 
 import React, { useRef, useState } from "react";
 import TextareaAutosize from "react-textarea-autosize";
-import { FiPlus, FiArrowUp, FiX, FiFileText } from "react-icons/fi";
+import { FiPlus, FiArrowUp, FiX, FiFileText, FiMic, FiSquare } from "react-icons/fi"; // Added Icons
 
 type ChatInputProps = {
   sendUserMessage: (text: string, file: File | null) => void;
+  sendVoiceMessage?: (audioBlob: Blob) => void; // New optional prop
 };
 
-const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage }) => {
+const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage, sendVoiceMessage }) => {
   const [value, setValue] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false); // Recording state
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentRef = useRef<File | null>(null);
+  
+  // Audio Refs
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   const hasText = value.trim().length > 0;
 
@@ -23,8 +30,6 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage }) => {
   const handleSubmit = () => {
     if (!value.trim() && !attachmentRef.current) return;
     sendUserMessage(value, attachmentRef.current);
-
-    // Reset input & file
     setValue("");
     attachmentRef.current = null;
     setFileName(null);
@@ -37,6 +42,45 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage }) => {
       handleSubmit();
     }
   };
+
+  // --- Voice Logic ---
+  const startRecording = async () => {
+    if (!sendVoiceMessage) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        sendVoiceMessage(audioBlob); // Trigger parent handler
+        
+        // Stop all tracks to release mic
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Microphone access denied:", err);
+      alert("Could not access microphone.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+  // -------------------
 
   const handleAddAttachment = () => {
     fileInputRef.current?.click();
@@ -57,7 +101,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage }) => {
 
   return (
     <div className="w-full max-w-3xl mx-auto px-4">
-      <div className="bg-neutral-800 rounded-2xl border border-neutral-700 flex flex-col justify-between px-4 py-3 min-h-18">
+      <div className={`bg-neutral-800 rounded-2xl border flex flex-col justify-between px-4 py-3 min-h-18 transition-colors ${isRecording ? "border-red-500/50 bg-neutral-800/80" : "border-neutral-700"}`}>
         {fileName && (
           <div className="relative inline-flex items-center gap-2 text-sm text-neutral-200 mb-2 bg-neutral-700 px-2 py-2 rounded-full shadow max-w-48">
             <FiFileText size={16} className="text-neutral-300" />
@@ -65,8 +109,6 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage }) => {
             <button
               onClick={handleRemoveFile}
               className="absolute right-2 text-neutral-400 hover:text-red-400 cursor-pointer"
-              title="Remove attachment"
-              aria-label="Remove attachment"
             >
               <FiX size={18} />
             </button>
@@ -76,32 +118,48 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage }) => {
         <TextareaAutosize
           minRows={1}
           maxRows={6}
-          placeholder="Type your message here..."
+          placeholder={isRecording ? "Listening..." : "Type your message here..."}
           className="w-full resize-none bg-transparent text-white placeholder-neutral-400 outline-none text-base leading-relaxed py-1"
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          disabled={isRecording}
         />
 
         <div className="mt-2 flex items-center justify-between gap-2">
-          <div>
+          <div className="flex items-center gap-2">
             <button
               className="flex items-center justify-center h-8 w-8 rounded-full text-neutral-400 hover:text-neutral-300 hover:bg-neutral-700 transition-colors duration-200 cursor-pointer"
               title="Add attachment"
               type="button"
               onClick={handleAddAttachment}
-              aria-label="Add attachment"
+              disabled={isRecording}
             >
               <FiPlus size={18} />
             </button>
             <input
-              title="Upload file"
               ref={fileInputRef}
               type="file"
               accept="application/pdf"
               style={{ display: "none" }}
               onChange={handleFileChange}
             />
+
+            {/* --- Mic Button --- */}
+            {sendVoiceMessage && (
+              <button
+                className={`flex items-center justify-center h-8 w-8 rounded-full transition-all duration-200 cursor-pointer ${
+                  isRecording 
+                    ? "bg-red-500 text-white animate-pulse" 
+                    : "text-neutral-400 hover:text-neutral-300 hover:bg-neutral-700"
+                }`}
+                title={isRecording ? "Stop Recording" : "Voice Chat"}
+                type="button"
+                onClick={isRecording ? stopRecording : startRecording}
+              >
+                {isRecording ? <FiSquare size={14} fill="currentColor" /> : <FiMic size={18} />}
+              </button>
+            )}
           </div>
 
           <div>
@@ -114,7 +172,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage }) => {
               title="Send message"
               onClick={handleSubmit}
               type="button"
-              aria-label="Send message"
+              disabled={isRecording}
             >
               <FiArrowUp size={16} />
             </button>
