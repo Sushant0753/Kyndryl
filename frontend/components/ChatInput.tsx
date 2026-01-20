@@ -2,25 +2,21 @@
 
 import React, { useRef, useState } from "react";
 import TextareaAutosize from "react-textarea-autosize";
-import { FiPlus, FiArrowUp, FiX, FiFileText, FiMic, FiSquare } from "react-icons/fi"; // Added Icons
+import { FiPlus, FiArrowUp, FiX, FiFileText, FiMic, FiSquare } from "react-icons/fi";
 
 type ChatInputProps = {
   sendUserMessage: (text: string, file: File | null) => void;
-  sendVoiceMessage?: (audioBlob: Blob) => void; // New optional prop
+  sendVoiceMessage?: (audioBlob: Blob) => void;
 };
 
 const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage, sendVoiceMessage }) => {
   const [value, setValue] = useState("");
   const [fileName, setFileName] = useState<string | null>(null);
-  const [isRecording, setIsRecording] = useState(false); // Recording state
-
+  const [isRecording, setIsRecording] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentRef = useRef<File | null>(null);
-  
-  // Audio Refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-
   const hasText = value.trim().length > 0;
 
   const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -43,7 +39,6 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage, sendVoiceMessage
     }
   };
 
-  // --- Voice Logic ---
   const startRecording = async () => {
     if (!sendVoiceMessage) return;
     try {
@@ -60,9 +55,7 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage, sendVoiceMessage
 
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
-        sendVoiceMessage(audioBlob); // Trigger parent handler
-        
-        // Stop all tracks to release mic
+        sendVoiceMessage(audioBlob);
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -80,7 +73,6 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage, sendVoiceMessage
       setIsRecording(false);
     }
   };
-  // -------------------
 
   const handleAddAttachment = () => {
     fileInputRef.current?.click();
@@ -140,12 +132,11 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage, sendVoiceMessage
             <input
               ref={fileInputRef}
               type="file"
-              accept="application/pdf"
+              accept=".pdf, .png, .jpg, .jpeg"
               style={{ display: "none" }}
               onChange={handleFileChange}
             />
 
-            {/* --- Mic Button --- */}
             {sendVoiceMessage && (
               <button
                 className={`flex items-center justify-center h-8 w-8 rounded-full transition-all duration-200 cursor-pointer ${
