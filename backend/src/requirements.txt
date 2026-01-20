@@ -6,6 +6,14 @@ python-dotenv==1.0.1
 # PDF processing
 pymupdf==1.25.2
 
+# OCR Processing
+pytesseract==0.3.13
+Pillow==10.0.0
+
+# Speech-to-Text
+SpeechRecognition==3.10.0
+pydub==0.25.1
+
 # AWS/Azure storage (optional)
 boto3==1.37.1
 aioboto3==14.1.0
@@ -39,6 +47,9 @@ qdrant-client==1.13.2
 
 # Azure OpenAI
 openai==1.58.1
+
+# Text-to-Speech
+elevenlabs==0.2.26
 
 # Azure Storage
 azure-storage-blob==12.19.0

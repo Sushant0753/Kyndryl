@@ -68,6 +68,41 @@ class AzureStorageService:
             logger.error(f"Failed to upload blob {blob_name}: {e}", exc_info=True)
             raise
 
+    async def upload_audio_blob(self, audio_content: bytes, blob_name: str) -> str:
+        """
+        Upload audio file to Azure Blob Storage
+
+        Args:
+            audio_content: Audio content as bytes (MP3 format)
+            blob_name: Name for the blob (e.g., "audio_{timestamp}.mp3")
+
+        Returns:
+            str: Blob URL
+        """
+        try:
+            blob_client = self.blob_service_client.get_blob_client(
+                container=self.container_name,
+                blob=blob_name
+            )
+
+            # Set content type for MP3 audio
+            content_settings = ContentSettings(content_type='audio/mpeg')
+
+            # Upload the audio blob
+            blob_client.upload_blob(
+                audio_content,
+                overwrite=True,
+                content_settings=content_settings
+            )
+
+            blob_url = blob_client.url
+            logger.info(f"Audio blob uploaded successfully: {blob_name}, URL={blob_url}, Size={len(audio_content)} bytes")
+            return blob_url
+
+        except Exception as e:
+            logger.error(f"Failed to upload audio blob {blob_name}: {e}", exc_info=True)
+            raise
+
     async def get_blob_url(self, blob_name: str) -> Optional[str]:
         """
         Get blob URL
