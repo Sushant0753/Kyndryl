@@ -1,3 +1,5 @@
+import { VoiceChatResponse } from "@/types/chat";
+
 export function useChatService() {
   const uploadFile = async (file: File) => {
     const fd = new FormData();
@@ -34,5 +36,22 @@ export function useChatService() {
     return await res.text();
   };
 
-  return { sendMessage, uploadFile };
+  const sendVoiceChat = async (audioBlob: Blob): Promise<VoiceChatResponse> => {
+    const fd = new FormData();
+    fd.append("file", audioBlob);
+
+    const res = await fetch("/api/voice-chat", {
+      method: "POST",
+      body: fd,
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(errorText || "Voice chat failed");
+    }
+
+    return await res.json();
+  };
+
+  return { sendMessage, uploadFile, sendVoiceChat };
 }

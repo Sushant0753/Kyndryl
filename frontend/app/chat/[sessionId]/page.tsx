@@ -12,8 +12,18 @@ import { LuCheck } from "react-icons/lu";
 
 export default function ChatPage() {
   const { sessionId } = useParams();
-  const { messages, sendUserMessage, containerRef, regenerateMessage, setDocumentId } =
-    useChatMessage();
+  
+  // Destructure new items: sendVoiceMessage, restoreSession
+  const { 
+    messages, 
+    sendUserMessage, 
+    sendVoiceMessage, 
+    containerRef, 
+    regenerateMessage, 
+    setDocumentId,
+    restoreSession
+  } = useChatMessage();
+
   const [copiedStates, setCopiedStates] = useState<Record<string, boolean>>({});
 
   // Restore session from Home page
@@ -25,17 +35,21 @@ export default function ChatPage() {
     try {
       const parsed = JSON.parse(raw);
       
-      // If we have an ID from the Home upload, pass it explicitly to the first message
-      // This ensures the first request uses the ID immediately without waiting for state updates
-      if (parsed.text) {
+      // CASE 1: Voice Result (Completed on Home Page)
+      if (parsed.type === "voice_result") {
+        restoreSession(parsed.userText, parsed.botText, parsed.audioUrl);
+      }
+      // CASE 2: Text Intent (Needs processing)
+      else if (parsed.text || parsed.type === "text_intent") {
         sendUserMessage(
           parsed.text, 
-          null, // No new file object (it's already on server)
-          parsed.filename, // Pass filename string for UI chip
-          parsed.documentId // Pass ID explicitly for this call
+          null, 
+          parsed.filename, 
+          parsed.documentId 
         );
-      } else if (parsed.documentId) {
-        // If there was no text (edge case), just set the ID
+      } 
+      // CASE 3: Document Only (Edge case)
+      else if (parsed.documentId) {
         setDocumentId(parsed.documentId);
       }
       
@@ -45,7 +59,7 @@ export default function ChatPage() {
       sessionStorage.removeItem(key);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]); // Run once on mount
+  }, [sessionId]); 
 
   const copyMessage = (text: string, id: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -81,6 +95,13 @@ export default function ChatPage() {
                   className="whitespace-pre-wrap break-words"
                   dangerouslySetInnerHTML={{ __html: msg.text }}
                 ></p>
+
+                {/* --- FIX: Audio Player for Bot Responses --- */}
+                {msg.audioUrl && (
+                    <div className="mt-3 bg-neutral-900/50 p-2 rounded-lg">
+                        <audio controls src={msg.audioUrl} className="w-full h-8 max-w-[250px]" />
+                    </div>
+                )}
 
                 {/* File chip (Only for User messages with filename) */}
                 {msg.filename && msg.isUser && (
@@ -135,10 +156,10 @@ export default function ChatPage() {
 
       {/* Chat Input */}
       <div className="p-4">
-        {/* Pass sendUserMessage directly. 
-            ChatInput typically sends (text, file). 
-            Our hook handles (text, file) correctly. */}
-        <ChatInput sendUserMessage={(text, file) => sendUserMessage(text, file)} />
+        <ChatInput 
+            sendUserMessage={(text, file) => sendUserMessage(text, file)} 
+            sendVoiceMessage={sendVoiceMessage} 
+        />
       </div>
     </div>
   );
