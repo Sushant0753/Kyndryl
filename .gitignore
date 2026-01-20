@@ -1,5 +1,6 @@
 # Environment Variables - NEVER COMMIT THESE
 .env
+.env.example
 .env.*
 !.env.example
 *.env
