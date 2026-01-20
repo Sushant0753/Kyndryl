@@ -6,6 +6,7 @@ export type ChatMessage = {
   documentId?: string;
   filename?: string;
   audioUrl?: string;
+  isLoading?: boolean;
 };
 
 export type VoiceChatResponse = {

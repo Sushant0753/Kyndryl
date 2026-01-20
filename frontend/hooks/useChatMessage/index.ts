@@ -2,10 +2,16 @@ import { useState, useRef, useEffect } from "react";
 import { ChatMessage } from "@/types/chat";
 import { useChatService } from "@/services/useChatService";
 
+function generateId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `msg_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+}
+
 function parseBackendResponse(rawResponse: string): string {
   try {
     const data = JSON.parse(rawResponse);
-    // Adjust based on your actual backend response structure
     const responseText = data.response || data.answer || data.content || JSON.stringify(data);
     return responseText.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
   } catch {
@@ -19,7 +25,6 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
   const { sendMessage, uploadFile, sendVoiceChat } = useChatService();
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-scroll to bottom
   useEffect(() => {
     if (containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight;
@@ -29,7 +34,6 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
   const addMessage = (msg: ChatMessage) =>
     setMessages((prev) => [...prev, msg]);
 
-  // --- 1. Standard Text/File Flow ---
   const sendUserMessage = async (
     text: string, 
     file: File | null, 
@@ -39,7 +43,7 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
     const displayFilename = file ? file.name : filenameOverride;
 
     const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       text,
       isUser: true,
       timeStamp: Date.now(),
@@ -47,12 +51,13 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
     };
     addMessage(userMsg);
 
-    const botMsgId = crypto.randomUUID();
+    const botMsgId = generateId();
     addMessage({
       id: botMsgId,
-      text: "Thinking...",
+      text: "",
       isUser: false,
       timeStamp: Date.now(),
+      isLoading: true,
     });
 
     try {
@@ -73,7 +78,9 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
 
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === botMsgId ? { ...m, text: botResponseText } : m
+          m.id === botMsgId 
+            ? { ...m, text: botResponseText, isLoading: false }
+            : m
         )
       );
     } catch (err) {
@@ -81,16 +88,19 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === botMsgId
-            ? { ...m, text: "Error: Something went wrong. Please try again." }
+            ? { 
+                ...m, 
+                text: "Error: Something went wrong. Please try again.", 
+                isLoading: false
+              }
             : m
         )
       );
     }
   };
 
-  // --- 2. Voice Flow (Direct Audio Upload) ---
   const sendVoiceMessage = async (audioBlob: Blob) => {
-    const tempUserMsgId = crypto.randomUUID();
+    const tempUserMsgId = generateId();
     addMessage({
       id: tempUserMsgId,
       text: "🎤 Sending audio...",
@@ -98,18 +108,18 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
       timeStamp: Date.now(),
     });
 
-    const botMsgId = crypto.randomUUID();
+    const botMsgId = generateId();
     addMessage({
       id: botMsgId,
-      text: "Listening...",
+      text: "",
       isUser: false,
       timeStamp: Date.now(),
+      isLoading: true,
     });
 
     try {
       const response = await sendVoiceChat(audioBlob);
 
-      // Update User Message (Transcription)
       setMessages((prev) => 
         prev.map((m) => 
             m.id === tempUserMsgId 
@@ -118,14 +128,14 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
         )
       );
 
-      // Update Bot Message (Response + Audio)
       setMessages((prev) =>
         prev.map((m) =>
           m.id === botMsgId
             ? { 
                 ...m, 
                 text: response.chat_response, 
-                audioUrl: response.audio_url 
+                audioUrl: response.audio_url,
+                isLoading: false
               }
             : m
         )
@@ -134,16 +144,17 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
       console.error("Voice Chat Error:", err);
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === botMsgId ? { ...m, text: "Error processing voice message." } : m
+          m.id === botMsgId 
+          ? { ...m, text: "Error processing voice message.", isLoading: false } 
+          : m
         )
       );
     }
   };
 
-  // --- 3. Restore Session (For Home -> Chat Handover) ---
   const restoreSession = (userText: string, botText: string, audioUrl?: string) => {
-    const userMsgId = crypto.randomUUID();
-    const botMsgId = crypto.randomUUID();
+    const userMsgId = generateId();
+    const botMsgId = generateId();
     const now = Date.now();
 
     const restoredMessages: ChatMessage[] = [
@@ -157,8 +168,9 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
         id: botMsgId,
         text: botText,
         isUser: false,
-        timeStamp: now + 1, // Ensure it appears after
+        timeStamp: now + 1,
         audioUrl: audioUrl,
+        isLoading: false,
       },
     ];
 
@@ -186,6 +198,6 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
     containerRef, 
     regenerateMessage,
     setDocumentId,
-    restoreSession // <--- This was missing before
+    restoreSession
   };
 }
