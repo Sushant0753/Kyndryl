@@ -1,8 +1,10 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file in src directory
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 
 def get_secret(environment_name):
@@ -22,6 +24,7 @@ def get_secret(environment_name):
 
             # Azure Storage
             "AZURE_STORAGE_CONNECTION_STRING": os.getenv("AZURE_STORAGE_CONNECTION_STRING", ""),
+            "AZURE_CONTAINER_NAME": os.getenv("AZURE_CONTAINER_NAME", "banking-documents"),
 
             # Qdrant
             "QDRANT_HOST_URL": os.getenv("QDRANT_HOST_URL", "http://192.168.10.50:6333"),

@@ -36,9 +36,10 @@ export function useChatService() {
     return await res.text();
   };
 
-  const sendVoiceChat = async (audioBlob: Blob): Promise<VoiceChatResponse> => {
+  const sendVoiceChat = async (audioBlob: Blob, voiceResponseEnabled: boolean = true): Promise<VoiceChatResponse> => {
     const fd = new FormData();
     fd.append("file", audioBlob);
+    fd.append("include_audio_response", voiceResponseEnabled.toString());
 
     const res = await fetch("/api/voice-chat", {
       method: "POST",
@@ -50,8 +51,25 @@ export function useChatService() {
       throw new Error(errorText || "Voice chat failed");
     }
 
-    return await res.json();
+    const response = await res.json();
+    return response;
   };
 
-  return { sendMessage, uploadFile, sendVoiceChat };
+  const synthesizeSpeech = async (text: string, language: string = "en"): Promise<{ audio_url: string }> => {
+    const res = await fetch("/api/synthesize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, language })
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(errorText || "TTS synthesis failed");
+    }
+
+    const data = await res.json();
+    return data;
+  };
+
+  return { sendMessage, uploadFile, sendVoiceChat, synthesizeSpeech };
 }

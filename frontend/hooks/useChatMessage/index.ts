@@ -22,7 +22,7 @@ function parseBackendResponse(rawResponse: string): string {
 export function useChatMessage(initialMessages: ChatMessage[] = []) {
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
-  const { sendMessage, uploadFile, sendVoiceChat } = useChatService();
+  const { sendMessage, uploadFile, sendVoiceChat, synthesizeSpeech } = useChatService();
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -35,8 +35,9 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
     setMessages((prev) => [...prev, msg]);
 
   const sendUserMessage = async (
-    text: string, 
-    file: File | null, 
+    text: string,
+    file: File | null,
+    ttsEnabled?: boolean,
     filenameOverride?: string,
     explicitDocId?: string
   ) => {
@@ -66,9 +67,9 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
       if (file) {
         const uploadRes = await uploadFile(file);
         docIdToUse = uploadRes.document_id;
-        setActiveDocumentId(docIdToUse); 
+        setActiveDocumentId(docIdToUse);
       } else if (explicitDocId) {
-        setActiveDocumentId(explicitDocId); 
+        setActiveDocumentId(explicitDocId);
       }
 
       const finalDocId = docIdToUse || null;
@@ -78,19 +79,34 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
 
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === botMsgId 
+          m.id === botMsgId
             ? { ...m, text: botResponseText, isLoading: false }
             : m
         )
       );
+
+      if (ttsEnabled && botResponseText) {
+        try {
+          const ttsResult = await synthesizeSpeech(botResponseText);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === botMsgId
+                ? { ...m, audioUrl: ttsResult.audio_url }
+                : m
+            )
+          );
+        } catch (ttsErr) {
+          console.error("TTS Debug TTS synthesis failed:", ttsErr);
+        }
+      }
     } catch (err) {
       console.error("Chat Error:", err);
       setMessages((prev) =>
         prev.map((m) =>
           m.id === botMsgId
-            ? { 
-                ...m, 
-                text: "Error: Something went wrong. Please try again.", 
+            ? {
+                ...m,
+                text: "Error: Something went wrong. Please try again.",
                 isLoading: false
               }
             : m
@@ -99,7 +115,7 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
     }
   };
 
-  const sendVoiceMessage = async (audioBlob: Blob) => {
+  const sendVoiceMessage = async (audioBlob: Blob, voiceResponseEnabled: boolean = true) => {
     const tempUserMsgId = generateId();
     addMessage({
       id: tempUserMsgId,
@@ -118,12 +134,12 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
     });
 
     try {
-      const response = await sendVoiceChat(audioBlob);
+      const response = await sendVoiceChat(audioBlob, voiceResponseEnabled);
 
-      setMessages((prev) => 
-        prev.map((m) => 
-            m.id === tempUserMsgId 
-            ? { ...m, text: response.transcribed_text || "🎤 [Audio Message]" } 
+      setMessages((prev) =>
+        prev.map((m) =>
+            m.id === tempUserMsgId
+            ? { ...m, text: response.transcribed_text || "🎤 [Audio Message]" }
             : m
         )
       );
@@ -131,9 +147,9 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === botMsgId
-            ? { 
-                ...m, 
-                text: response.chat_response, 
+            ? {
+                ...m,
+                text: response.chat_response,
                 audioUrl: response.audio_url,
                 isLoading: false
               }

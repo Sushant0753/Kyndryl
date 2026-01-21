@@ -45,7 +45,7 @@ class AzureOpenAISettings(BaseSettings):
 
 class AzureStorageSettings(BaseSettings):
     AZURE_STORAGE_CONNECTION_STRING:str=secret_keys_list['AZURE_STORAGE_CONNECTION_STRING']
-    AZURE_STORAGE_CONTAINER_NAME:str="banking-documents"
+    AZURE_STORAGE_CONTAINER_NAME:str=secret_keys_list.get('AZURE_CONTAINER_NAME', 'banking-documents')
 
 class DocumentSettings(BaseSettings):
     MAX_FILE_SIZE:int=10 * 1024 * 1024  # 10MB

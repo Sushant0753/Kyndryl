@@ -2,13 +2,14 @@ from services.embedding_service import EmbeddingService
 from services.qdrant_service import QdrantService
 from services.llm_service import LLMService
 from services.bhashini_service import BhashiniTranslationService
+from services.sentiment_service import SentimentService
 from utils.language_detector import LanguageDetector
 from typing import List, Dict, Optional, Tuple
 from lib.logger import logger
 
 
 class RAGService:
-    """RAG pipeline orchestration service with multi-language support"""
+    """RAG pipeline orchestration service with multi-language support and sentiment awareness"""
 
     def __init__(self):
         self.embedding_service = EmbeddingService()
@@ -16,7 +17,8 @@ class RAGService:
         self.llm_service = LLMService()
         self.translation_service = BhashiniTranslationService()
         self.language_detector = LanguageDetector()
-        logger.info("RAG Service initialized with multi-language support")
+        self.sentiment_service = SentimentService()
+        logger.info("RAG Service initialized with multi-language support and sentiment analysis")
 
     def store_document_embeddings(self, chunks_with_metadata: List[Dict]):
         """
@@ -43,31 +45,36 @@ class RAGService:
             logger.error(f"Failed to store document embeddings: {e}", exc_info=True)
             raise
 
-    def query_with_rag(self, user_query: str, document_id: Optional[str] = None) -> Tuple[str, str]:
+    def query_with_rag(self, user_query: str, document_id: Optional[str] = None) -> Tuple[str, str, Dict]:
         """
-        RAG pipeline for queries with document context and multi-language support
+        RAG pipeline for queries with document context, multi-language support, and sentiment awareness
 
         Steps:
-        1. Detect user query language
-        2. Translate query to English if needed
-        3. Generate query embedding
-        4. Search Qdrant (with optional document filter)
-        5. Format context from retrieved chunks
-        6. Send to LLM with context
-        7. Translate response back to user's language
-        8. Return response
+        1. Analyze sentiment of user query
+        2. Detect user query language
+        3. Translate query to English if needed
+        4. Generate query embedding
+        5. Search Qdrant (with optional document filter)
+        6. Format context from retrieved chunks
+        7. Send to LLM with sentiment-aware context
+        8. Translate response back to user's language
+        9. Return response
 
         Args:
             user_query: User's question
             document_id: Optional document ID to filter by
 
         Returns:
-            Tuple[str, str]: (AI-generated response, detected language code)
+            Tuple[str, str, Dict]: (AI-generated response, detected language code, sentiment data)
         """
         try:
             logger.info(f"Processing RAG query: '{user_query[:50]}...'")
 
-            # Step 1: Detect language
+            # Step 1: Analyze sentiment
+            sentiment_data = self.sentiment_service.analyze_sentiment(user_query)
+            logger.info(f"Sentiment: {sentiment_data['sentiment']} (confidence: {sentiment_data['confidence']:.2f})")
+
+            # Step 2: Detect language
             detected_language = self.language_detector.detect_language(user_query)
             language_name = self.language_detector.get_language_name(detected_language)
             logger.info(f"Detected language: {language_name} ({detected_language})")
@@ -102,15 +109,16 @@ class RAGService:
                     if translated_message:
                         no_info_message = translated_message
 
-                return no_info_message, detected_language
+                return no_info_message, detected_language, sentiment_data
 
             # Step 5: Format context
             context = self._format_context(retrieved_chunks)
 
-            # Step 6: Generate response in English
+            # Step 6: Generate sentiment-aware response in English
             english_response = self.llm_service.generate_response_with_context(
                 query=english_query,
-                context=context
+                context=context,
+                sentiment_data=sentiment_data
             )
 
             # Step 7: Translate response back to user's language
@@ -122,34 +130,39 @@ class RAGService:
                     final_response = translated_response
                     logger.info(f"Translated response: '{final_response[:50]}...'")
 
-            logger.info(f"RAG query completed successfully. Used {len(retrieved_chunks)} chunks, Language: {detected_language}")
-            return final_response, detected_language
+            logger.info(f"RAG query completed successfully. Used {len(retrieved_chunks)} chunks, Language: {detected_language}, Sentiment: {sentiment_data['sentiment']}")
+            return final_response, detected_language, sentiment_data
 
         except Exception as e:
             logger.error(f"Failed to process RAG query: {e}", exc_info=True)
             raise
 
-    def query_without_rag(self, user_query: str) -> Tuple[str, str]:
+    def query_without_rag(self, user_query: str) -> Tuple[str, str, Dict]:
         """
-        Direct LLM query for general banking questions with multi-language support
+        Direct LLM query for general banking questions with multi-language support and sentiment awareness
 
         Steps:
-        1. Detect user query language
-        2. Translate query to English if needed
-        3. Send to LLM for response
-        4. Translate response back to user's language
-        5. Return response
+        1. Analyze sentiment of user query
+        2. Detect user query language
+        3. Translate query to English if needed
+        4. Send to LLM with sentiment-aware prompt
+        5. Translate response back to user's language
+        6. Return response
 
         Args:
             user_query: User's banking question
 
         Returns:
-            Tuple[str, str]: (AI-generated response, detected language code)
+            Tuple[str, str, Dict]: (AI-generated response, detected language code, sentiment data)
         """
         try:
             logger.info(f"Processing general banking query: '{user_query[:50]}...'")
 
-            # Step 1: Detect language
+            # Step 1: Analyze sentiment
+            sentiment_data = self.sentiment_service.analyze_sentiment(user_query)
+            logger.info(f"Sentiment: {sentiment_data['sentiment']} (confidence: {sentiment_data['confidence']:.2f})")
+
+            # Step 2: Detect language
             detected_language = self.language_detector.detect_language(user_query)
             language_name = self.language_detector.get_language_name(detected_language)
             logger.info(f"Detected language: {language_name} ({detected_language})")
@@ -163,8 +176,11 @@ class RAGService:
                     english_query = translated
                     logger.info(f"Translated query: '{english_query[:50]}...'")
 
-            # Step 3: Generate response in English
-            english_response = self.llm_service.generate_banking_response(english_query)
+            # Step 3: Generate sentiment-aware response in English
+            english_response = self.llm_service.generate_banking_response(
+                english_query,
+                sentiment_data=sentiment_data
+            )
 
             # Step 4: Translate response back to user's language
             final_response = english_response
@@ -175,8 +191,8 @@ class RAGService:
                     final_response = translated_response
                     logger.info(f"Translated response: '{final_response[:50]}...'")
 
-            logger.info(f"General banking query completed successfully. Language: {detected_language}")
-            return final_response, detected_language
+            logger.info(f"General banking query completed successfully. Language: {detected_language}, Sentiment: {sentiment_data['sentiment']}")
+            return final_response, detected_language, sentiment_data
 
         except Exception as e:
             logger.error(f"Failed to process general query: {e}", exc_info=True)

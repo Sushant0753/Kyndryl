@@ -14,8 +14,6 @@ export async function POST(req: NextRequest) {
     const backendFormData = new FormData();
     backendFormData.append("file", file, "voice_message.webm"); 
 
-    console.log(`[Proxy] Forwarding audio to ${BACKEND_URL}/api/speech/voice-chat`);
-
     const backendRes = await fetch(`${BACKEND_URL}/api/speech/voice-chat`, {
       method: "POST",
       body: backendFormData,

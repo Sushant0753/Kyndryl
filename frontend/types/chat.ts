@@ -13,6 +13,7 @@ export type VoiceChatResponse = {
   transcribed_text: string;
   chat_response: string;
   audio_url: string;
+  errors?: string[];
 };
 
 export type ChatSummary = {

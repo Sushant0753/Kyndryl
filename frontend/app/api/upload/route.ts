@@ -24,11 +24,6 @@ export async function POST(req: NextRequest) {
     const backendFormData = new FormData();
     backendFormData.append("file", file, file.name);
 
-    backendFormData.forEach((value, key) => {
-      console.log(`[FormData Debug] "${key}":`, value instanceof File ? value.name : value);
-    });
-
-    console.log(`[Proxy] Forwarding "${file.name}" to ${BACKEND_URL}/api/upload/`);
 
     const backendRes = await fetch(`${BACKEND_URL}/api/upload/`, {
       method: "POST",

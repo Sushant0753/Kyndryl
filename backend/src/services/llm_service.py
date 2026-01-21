@@ -1,6 +1,7 @@
 from openai import AzureOpenAI
 from configs.config import AzureOpenAISettings
 from lib.logger import logger
+from typing import Optional, Dict
 
 
 class LLMService:
@@ -15,18 +16,25 @@ class LLMService:
         )
         logger.info(f"LLM Service initialized: Endpoint={self.settings.AZURE_OPENAI_CHAT_ENDPOINT}, Model={self.settings.AZURE_OPENAI_CHAT_DEPLOYMENT}, API Version={self.settings.AZURE_OPENAI_CHAT_API_VERSION}")
 
-    def generate_response_with_context(self, query: str, context: str) -> str:
+    def generate_response_with_context(
+        self,
+        query: str,
+        context: str,
+        sentiment_data: Optional[Dict] = None
+    ) -> str:
         """
-        Generate response using RAG context
+        Generate sentiment-aware response using RAG context
 
         Args:
             query: User's question
             context: Retrieved document context
+            sentiment_data: Optional sentiment analysis results
 
         Returns:
             str: AI-generated response
         """
-        system_prompt = """You are a friendly and trustworthy banking assistant who understands the Indian banking system well.
+        # Build sentiment-aware system prompt
+        base_system_prompt = """You are a friendly and trustworthy banking assistant who understands the Indian banking system well.
 
 Your goal is to help Indian customers feel confident and relaxed while dealing with banks. Speak like a helpful friend who knows banking — not like a policy document.
 
@@ -58,8 +66,39 @@ IMPORTANT RULE:
 If the answer is getting long, STOP and summarize. Let the user ask follow-up questions.
 
 Always end by gently offering help:
-“Let me know if you want this explained more simply or step-by-step.”
- """
+"Let me know if you want this explained more simply or step-by-step."
+"""
+
+        # Add sentiment-specific guidance if sentiment is detected
+        if sentiment_data and sentiment_data.get('sentiment') != 'neutral':
+            sentiment = sentiment_data['sentiment']
+            tone_guide = sentiment_data.get('tone_guide', '')
+            depth = sentiment_data.get('explanation_depth', 'moderate')
+            empathy_prefix = sentiment_data.get('empathy_level', '')
+
+            sentiment_guidance = f"""
+
+🎭 CUSTOMER EMOTIONAL STATE: {sentiment.upper()}
+{tone_guide}
+
+EXPLANATION DEPTH: {depth}
+- simple: Use very basic language, avoid technical terms
+- moderate: Balance detail with clarity
+- detailed: Step-by-step explanations with examples
+- brief: Concise and to the point
+
+EMPATHY LEVEL: {empathy_prefix}
+- Start your response with understanding and empathy
+- {
+    "Acknowledge their frustration and focus on solutions" if sentiment == 'frustrated'
+    else "Be extra patient and break down concepts clearly" if sentiment == 'confused'
+    else "Reinforce their positive experience warmly" if sentiment == 'satisfied'
+    else ""
+}
+"""
+            system_prompt = base_system_prompt + sentiment_guidance
+        else:
+            system_prompt = base_system_prompt
 
         user_message = f"""Context from documents:
 {context}
@@ -93,17 +132,18 @@ Please provide a clear, accurate answer based on the context above."""
             logger.error(f"Failed to generate response with context: {e}", exc_info=True)
             raise
 
-    def generate_banking_response(self, query: str) -> str:
+    def generate_banking_response(self, query: str, sentiment_data: Optional[Dict] = None) -> str:
         """
-        Generate response for general banking questions (no RAG)
+        Generate sentiment-aware response for general banking questions (no RAG)
 
         Args:
             query: User's banking question
+            sentiment_data: Optional sentiment analysis results
 
         Returns:
             str: AI-generated response
         """
-        system_prompt = """You are a friendly, trustworthy banking assistant for Indian customers.
+        base_system_prompt = """You are a friendly, trustworthy banking assistant for Indian customers.
 
 Your job is to make banking feel simple, safe, and stress-free — like a knowledgeable friend helping out.
 Assume common Indian banks such as SBI, HDFC Bank, ICICI Bank, Axis Bank, and similar RBI-regulated institutions.
@@ -116,7 +156,7 @@ Your guidance should always assume the Indian banking environment, including:
 
 HOW TO RESPOND:
 - Keep answers short and clear by default.
-- Explain only what the user asks. Do not give extra information unless it’s important.
+- Explain only what the user asks. Do not give extra information unless it's important.
 - Use simple, everyday English (Indian-friendly).
 - If something is confusing, explain it calmly and step-by-step.
 - Avoid formal, policy-style language.
@@ -127,11 +167,6 @@ LENGTH RULE (VERY IMPORTANT):
 - If more detail is needed, give a brief summary first and let the user ask more.
 - If the answer is getting long, stop and summarize.
 
-DOCUMENT RULES:
-- Use ONLY the information provided in the given documents.
-- Do not add outside knowledge.
-- If the document doesn’t contain the answer, say so clearly and politely.
-
 TONE:
 - Calm, reassuring, and human
 - No fear, no pressure
@@ -139,8 +174,38 @@ TONE:
 - At most one emoji, only if it feels natural
 
 Always end gently, for example:
-“Tell me if you want this explained more simply or step-by-step.”
- r."""
+"Tell me if you want this explained more simply or step-by-step."
+"""
+
+        # Add sentiment-specific guidance if sentiment is detected
+        if sentiment_data and sentiment_data.get('sentiment') != 'neutral':
+            sentiment = sentiment_data['sentiment']
+            tone_guide = sentiment_data.get('tone_guide', '')
+            depth = sentiment_data.get('explanation_depth', 'moderate')
+            empathy_level = sentiment_data.get('empathy_level', '')
+
+            sentiment_guidance = f"""
+
+🎭 CUSTOMER EMOTIONAL STATE: {sentiment.upper()}
+{tone_guide}
+
+EXPLANATION DEPTH: {depth}
+- simple: Use very basic language, avoid all technical terms, focus on actionable steps
+- moderate: Balance detail with clarity
+- detailed: Provide comprehensive step-by-step guidance with examples
+- brief: Keep it concise and direct
+
+EMPATHY LEVEL: {empathy_level}
+- {
+    "Begin with acknowledgment of their frustration. Be solution-focused and reassuring." if sentiment == 'frustrated'
+    else "Be extra patient. Break down concepts into small, digestible pieces. Use analogies." if sentiment == 'confused'
+    else "Acknowledge their positive sentiment. Maintain the warm, supportive tone." if sentiment == 'satisfied'
+    else ""
+}
+"""
+            system_prompt = base_system_prompt + sentiment_guidance
+        else:
+            system_prompt = base_system_prompt
 
         try:
             response = self.client.chat.completions.create(

@@ -159,7 +159,7 @@ async def voice_chat(
             if document_id:
                 # RAG mode
                 logger.info(f"Using RAG mode with document_id={document_id}")
-                chat_response, detected_language = rag_service.query_with_rag(
+                chat_response, detected_language, sentiment_data = rag_service.query_with_rag(
                     user_query=transcribed_text,
                     document_id=document_id
                 )
@@ -168,13 +168,13 @@ async def voice_chat(
             else:
                 # General mode
                 logger.info("Using general mode (no document context)")
-                chat_response, detected_language = rag_service.query_without_rag(transcribed_text)
+                chat_response, detected_language, sentiment_data = rag_service.query_without_rag(transcribed_text)
                 mode = "general"
                 chunks_used = None
 
             language_name = language_detector.get_language_name(detected_language)
 
-            logger.info(f"Chat successful: {len(chat_response)} characters, language={detected_language}")
+            logger.info(f"Chat successful: {len(chat_response)} characters, language={detected_language}, sentiment={sentiment_data.get('sentiment', 'unknown')}")
 
         except Exception as e:
             logger.error(f"Chat processing failed: {e}")
@@ -189,22 +189,31 @@ async def voice_chat(
         if include_audio_response and chat_response:
             try:
                 tts_service = ElevenLabsService()
+                logger.info(f"TTS requested for {len(chat_response)} character response")
 
                 if tts_service.is_available():
+                    logger.info(f"TTS service available - API Key configured: {bool(tts_service.settings.ELEVENLABS_API_KEY)}, Voice ID: {tts_service.settings.ELEVENLABS_VOICE_ID}")
+
                     audio_content = tts_service.text_to_speech(chat_response)
                     if audio_content:
+                        logger.info(f"TTS generation successful: {len(audio_content)} bytes generated")
+
                         # Store audio in Azure Blob Storage
                         azure_storage = AzureStorageService()
                         audio_filename = f"voice_chat_{uuid.uuid4().hex[:8]}_{int(datetime.now().timestamp())}.mp3"
+                        logger.info(f"Uploading audio to Azure storage: {audio_filename}")
+
                         audio_url = await azure_storage.upload_audio_blob(audio_content, audio_filename)
-                        logger.info(f"TTS successful: {audio_url}")
+                        logger.info(f"TTS successful - Audio URL: {audio_url}")
                     else:
-                        errors.append("TTS conversion failed")
+                        logger.error("TTS generation returned empty audio content")
+                        errors.append("TTS conversion failed: empty audio returned")
                 else:
-                    errors.append("TTS service not available")
+                    logger.warning(f"TTS service not available - API Key: {bool(tts_service.settings.ELEVENLABS_API_KEY)}, Voice ID: {tts_service.settings.ELEVENLABS_VOICE_ID}")
+                    errors.append("TTS service not available: API key not configured")
 
             except Exception as e:
-                logger.warning(f"TTS failed, continuing without audio: {e}")
+                logger.error(f"TTS failed with exception: {e}", exc_info=True)
                 errors.append(f"TTS failed: {str(e)}")
 
         logger.info(f"Voice chat completed: STT→Chat→TTS pipeline finished")
@@ -284,3 +293,170 @@ async def get_supported_languages():
     except Exception as e:
         logger.error(f"Failed to get supported languages: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve supported languages")
+
+
+@router.get("/tts-status")
+async def check_tts_status():
+    """
+    Check TTS service availability and configuration status
+
+    Returns diagnostic information about the ElevenLabs TTS service:
+    - Is service available
+    - API key configured status
+    - Voice ID being used
+
+    Use this endpoint to troubleshoot TTS issues.
+    """
+    try:
+        tts_service = ElevenLabsService()
+        is_available = tts_service.is_available()
+
+        # Get configuration details
+        api_key = tts_service.settings.ELEVENLABS_API_KEY
+        api_key_configured = bool(api_key)
+        voice_id = tts_service.settings.ELEVENLABS_VOICE_ID
+
+        # Check for whitespace issues
+        api_key_has_whitespace = api_key != api_key.strip() if api_key else False
+
+        # Log the status with API key preview (first/last 4 chars)
+        api_key_preview = f"{api_key[:4]}...{api_key[-4:]}" if api_key and len(api_key) > 8 else "N/A"
+        logger.info(f"TTS Status Check - Available: {is_available}, API Key: {api_key_preview}, Voice ID: {voice_id}")
+
+        # Test the API key by getting voice info
+        test_result = None
+        try:
+            voice_info = tts_service.get_voice_info()
+            test_result = "success" if voice_info else "failed"
+        except Exception as test_error:
+            test_result = f"error: {str(test_error)}"
+
+        # Get subscription and quota information
+        quota_info = None
+        if is_available:
+            try:
+                subscription_info = tts_service.get_subscription_info()
+                if subscription_info:
+                    # Extract quota information from subscription
+                    character_count = subscription_info.get("character_count", 0)
+                    character_limit = subscription_info.get("character_limit", 0)
+                    remaining = character_limit - character_count
+
+                    quota_info = {
+                        "character_count": character_count,
+                        "character_limit": character_limit,
+                        "remaining": remaining,
+                        "tier": subscription_info.get("tier", "unknown"),
+                        "usage_percentage": round((character_count / character_limit * 100) if character_limit > 0 else 0, 2)
+                    }
+                    logger.info(f"Quota Info - Used: {character_count}/{character_limit}, Remaining: {remaining}")
+            except Exception as quota_error:
+                logger.error(f"Failed to get quota info: {quota_error}")
+                quota_info = {"error": "Failed to retrieve quota information"}
+
+        status_response = {
+            "available": is_available,
+            "api_key_configured": api_key_configured,
+            "api_key_length": len(api_key) if api_key else 0,
+            "api_key_preview": api_key_preview,
+            "api_key_has_whitespace": api_key_has_whitespace,
+            "voice_id": voice_id,
+            "api_test_result": test_result,
+            "status": "ready" if is_available else "not_configured"
+        }
+
+        # Add quota info if available
+        if quota_info:
+            status_response["quota"] = quota_info
+
+        return status_response
+
+    except Exception as e:
+        logger.error(f"TTS status check failed: {e}")
+        return {
+            "available": False,
+            "api_key_configured": False,
+            "voice_id": None,
+            "status": "error",
+            "error": str(e)
+        }
+
+
+@router.post("/synthesize")
+async def synthesize_text(
+    text: str = Form(..., description="Text to convert to speech"),
+    language: Optional[str] = Form("en", description="Language code (default: en)")
+):
+    """
+    Convert text to speech and return audio URL
+
+    **Text-to-Speech Synthesis:**
+    - Converts provided text to natural-sounding speech
+    - Supports multiple languages via ElevenLabs multilingual model
+    - Returns Azure Blob Storage URL for generated audio
+
+    **Use Case:**
+    - Generate TTS for typed text messages (not voice messages)
+    - Allow users to hear bot responses without using voice input
+
+    Args:
+        text: Text content to synthesize
+        language: Language code (default: en)
+
+    Returns:
+        JSON with audio_url field containing the audio file URL
+    """
+    try:
+        logger.info(f"Text synthesis requested: {len(text)} characters, language={language}")
+
+        # Initialize TTS service
+        tts_service = ElevenLabsService()
+
+        if not tts_service.is_available():
+            logger.error("TTS service not available for text synthesis")
+            raise HTTPException(
+                status_code=503,
+                detail="TTS service not available. Please check API key configuration."
+            )
+
+        # Truncate text if too long (ElevenLabs has character limits)
+        max_chars = 2500
+        if len(text) > max_chars:
+            logger.warning(f"Text too long ({len(text)} chars), truncating to {max_chars}")
+            text = text[:max_chars] + "..."
+
+        # Generate audio
+        audio_content = tts_service.text_to_speech(text)
+        if not audio_content:
+            logger.error("TTS generation returned empty audio content")
+            raise HTTPException(
+                status_code=500,
+                detail="TTS generation failed: empty audio returned"
+            )
+
+        logger.info(f"TTS generation successful: {len(audio_content)} bytes")
+
+        # Upload to Azure Blob Storage
+        azure_storage = AzureStorageService()
+        audio_filename = f"synthesized_{uuid.uuid4().hex[:8]}_{int(datetime.now().timestamp())}.mp3"
+        logger.info(f"Uploading synthesized audio to Azure: {audio_filename}")
+
+        audio_url = await azure_storage.upload_audio_blob(audio_content, audio_filename)
+        logger.info(f"Text synthesis successful: {audio_url}")
+
+        return {
+            "audio_url": audio_url,
+            "text_length": len(text),
+            "audio_size": len(audio_content)
+        }
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+
+    except Exception as e:
+        logger.error(f"Text synthesis failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Text synthesis failed: {str(e)}"
+        )

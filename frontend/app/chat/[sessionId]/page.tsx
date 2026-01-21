@@ -2,7 +2,7 @@
 
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useChatMessage } from "@/hooks/useChatMessage"; 
+import { useChatMessage } from "@/hooks/useChatMessage";
 import { ChatMessage } from "@/types/chat";
 import ChatInput from "@/components/ChatInput";
 import { FiFileText } from "react-icons/fi";
@@ -12,13 +12,13 @@ import { LuCheck } from "react-icons/lu";
 
 export default function ChatPage() {
   const { sessionId } = useParams();
-   
-  const { 
-    messages, 
-    sendUserMessage, 
-    sendVoiceMessage, 
-    containerRef, 
-    regenerateMessage, 
+
+  const {
+    messages,
+    sendUserMessage,
+    sendVoiceMessage,
+    containerRef,
+    regenerateMessage,
     setDocumentId,
     restoreSession
   } = useChatMessage();
@@ -32,10 +32,17 @@ export default function ChatPage() {
 
     try {
       const parsed = JSON.parse(raw);
+
       if (parsed.type === "voice_result") {
         restoreSession(parsed.userText, parsed.botText, parsed.audioUrl);
       } else if (parsed.text || parsed.type === "text_intent") {
-        sendUserMessage(parsed.text, null, parsed.filename, parsed.documentId);
+        sendUserMessage(
+          parsed.text,
+          null,
+          undefined,
+          parsed.filename,
+          parsed.documentId
+        );
       } else if (parsed.documentId) {
         setDocumentId(parsed.documentId);
       }
@@ -45,7 +52,7 @@ export default function ChatPage() {
       sessionStorage.removeItem(key);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]); 
+  }, [sessionId]);
 
   const copyMessage = (text: string, id: string) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -58,7 +65,6 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-screen bg-dots">
-      {/* Chat messages */}
       <div
         ref={containerRef}
         className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 space-y-4 pl-32 pr-16 w-full"
@@ -69,15 +75,20 @@ export default function ChatPage() {
             className={`flex ${msg.isUser ? "justify-end" : "justify-start"}`}
           >
             <div className={`max-w-[80%] ${msg.isUser ? "" : "space-y-2"}`}>
-
               {msg.isLoading ? (
                 <div className="flex gap-6 animate-pulse">
                   <div className="bg-neutral-800 rounded-2xl p-4 shadow-sm flex items-center">
-                     <div className="flex space-x-2">
-                         <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                         <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                         <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                     </div>
+                    <div className="flex space-x-2">
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" />
+                      <div
+                        className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                        style={{ animationDelay: "150ms" }}
+                      />
+                      <div
+                        className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+                        style={{ animationDelay: "300ms" }}
+                      />
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -91,20 +102,30 @@ export default function ChatPage() {
                   <p
                     className="whitespace-pre-wrap break-words"
                     dangerouslySetInnerHTML={{ __html: msg.text }}
-                  ></p>
+                  />
+
                   {msg.audioUrl && (
-                      <div className="mt-3 bg-neutral-900/50 p-2 rounded-lg">
-                          <audio controls src={msg.audioUrl} className="w-full h-8 max-w-[250px]" />
-                      </div>
+                    <div className="mt-3 bg-neutral-900/50 p-2 rounded-lg">
+                      <audio
+                        autoPlay
+                        controls
+                        src={msg.audioUrl}
+                        className="w-full h-8 max-w-[250px]"
+                      />
+                    </div>
                   )}
+
                   {msg.filename && msg.isUser && (
                     <div className="inline-flex items-center gap-2 text-sm text-neutral-200 mt-2 bg-neutral-700 px-2 py-2 rounded-full shadow max-w-48">
                       <FiFileText size={16} className="text-neutral-300" />
-                      <span className="truncate flex-1 pr-6">{msg.filename}</span>
+                      <span className="truncate flex-1 pr-6">
+                        {msg.filename}
+                      </span>
                     </div>
                   )}
                 </div>
               )}
+
               {!msg.isUser && !msg.isLoading && (
                 <>
                   <div className="flex gap-2 pl-2">
@@ -144,9 +165,9 @@ export default function ChatPage() {
         ))}
       </div>
       <div className="p-4">
-        <ChatInput 
-            sendUserMessage={(text, file) => sendUserMessage(text, file)} 
-            sendVoiceMessage={sendVoiceMessage} 
+        <ChatInput
+          sendUserMessage={(text, file) => sendUserMessage(text, file)}
+          sendVoiceMessage={sendVoiceMessage}
         />
       </div>
     </div>

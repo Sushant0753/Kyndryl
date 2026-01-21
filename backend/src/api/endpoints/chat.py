@@ -49,10 +49,10 @@ async def chat(request: ChatRequest):
         logger.info(f"Chat request: query='{request.query[:50]}...', document_id={request.document_id}")
 
         if request.document_id:
-            # RAG mode - query with document context
+            # RAG mode - query with document context and sentiment analysis
             logger.info(f"Using RAG mode with document_id={request.document_id}")
 
-            response_text, detected_language = rag_service.query_with_rag(
+            response_text, detected_language, sentiment_data = rag_service.query_with_rag(
                 user_query=request.query,
                 document_id=request.document_id
             )
@@ -65,14 +65,16 @@ async def chat(request: ChatRequest):
                 detected_language=detected_language,
                 language_name=language_name,
                 document_id=request.document_id,
-                chunks_used=30  # We retrieve top 30 chunks
+                chunks_used=30,  # We retrieve top 30 chunks
+                sentiment=sentiment_data.get('sentiment'),
+                sentiment_confidence=sentiment_data.get('confidence')
             )
 
         else:
-            # General mode - no RAG
+            # General mode - no RAG, with sentiment analysis
             logger.info("Using general mode (no document context)")
 
-            response_text, detected_language = rag_service.query_without_rag(request.query)
+            response_text, detected_language, sentiment_data = rag_service.query_without_rag(request.query)
 
             language_name = language_detector.get_language_name(detected_language)
 
@@ -82,7 +84,9 @@ async def chat(request: ChatRequest):
                 detected_language=detected_language,
                 language_name=language_name,
                 document_id=None,
-                chunks_used=None
+                chunks_used=None,
+                sentiment=sentiment_data.get('sentiment'),
+                sentiment_confidence=sentiment_data.get('confidence')
             )
 
     except ValueError as e:
