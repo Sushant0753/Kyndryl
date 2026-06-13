@@ -1,6 +1,6 @@
 """
 BankIngestionService orchestrates the full SBI data ingestion pipeline:
-1. Run all data sources (web scraper, PDF downloader, RSS news)
+1. Run all data sources (sitemap scraper, RSS news, Wikipedia)
 2. Deduplicate via SHA256 content hash stored in MongoDB
 3. Chunk text using existing TextChunker
 4. Generate embeddings using existing EmbeddingService
@@ -14,8 +14,8 @@ from datetime import datetime, timezone
 from typing import List, Dict, Optional
 from motor.motor_asyncio import AsyncIOMotorClient
 from configs.config import DocumentDB, SBIIngestionSettings
-from services.bank_ingestion.sbi_web_scraper import SBIWebScraper
-from services.bank_ingestion.sbi_pdf_downloader import SBIPDFDownloader
+from services.bank_ingestion.sbi_sitemap_service import SBISitemapService
+from services.bank_ingestion.sbi_wikipedia_service import SBIWikipediaService
 from services.bank_ingestion.sbi_news_rss_service import SBINewsRSSService
 from services.embedding_service import EmbeddingService
 from services.qdrant_service import QdrantService
@@ -71,24 +71,13 @@ class BankIngestionService:
             raw_items = []
 
             try:
-                with SBIWebScraper() as scraper:
-                    web_items = scraper.scrape_pages()
-                    press_items = scraper.scrape_press_releases()
-                    raw_items.extend(web_items)
-                    raw_items.extend(press_items)
-                    logger.info(f"Web scraper collected {len(web_items) + len(press_items)} items")
+                with SBISitemapService() as svc:
+                    sitemap_items = svc.scrape_via_sitemap()
+                    raw_items.extend(sitemap_items)
+                    logger.info(f"Sitemap service collected {len(sitemap_items)} items")
             except Exception as e:
-                errors.append(f"Web scraper error: {str(e)}")
-                logger.error(f"Web scraper failed: {e}", exc_info=True)
-
-            try:
-                with SBIPDFDownloader() as downloader:
-                    pdf_items = downloader.download_and_extract()
-                    raw_items.extend(pdf_items)
-                    logger.info(f"PDF downloader collected {len(pdf_items)} items")
-            except Exception as e:
-                errors.append(f"PDF downloader error: {str(e)}")
-                logger.error(f"PDF downloader failed: {e}", exc_info=True)
+                errors.append(f"Sitemap service error: {str(e)}")
+                logger.error(f"Sitemap service failed: {e}", exc_info=True)
 
             try:
                 news_service = SBINewsRSSService()
@@ -99,10 +88,21 @@ class BankIngestionService:
                 errors.append(f"RSS service error: {str(e)}")
                 logger.error(f"RSS service failed: {e}", exc_info=True)
 
+            try:
+                wiki_items = SBIWikipediaService().fetch_articles()
+                raw_items.extend(wiki_items)
+                logger.info(f"Wikipedia service collected {len(wiki_items)} items")
+            except Exception as e:
+                errors.append(f"Wikipedia service error: {str(e)}")
+                logger.error(f"Wikipedia service failed: {e}", exc_info=True)
+
             raw_items_collected = len(raw_items)
             logger.info(f"Total raw items collected: {raw_items_collected}")
 
-            # 2. Process each item: deduplicate, chunk, embed, store
+            # 2. Deduplicate and chunk all items — collect into one list before embedding
+            all_chunks_with_payload = []
+            ingestion_date = datetime.now(timezone.utc).isoformat()
+
             for item in raw_items:
                 try:
                     text = item.get('text', '').strip()
@@ -110,7 +110,6 @@ class BankIngestionService:
                         continue
 
                     content_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()
-                    ingestion_date = datetime.now(timezone.utc).isoformat()
 
                     # Dedup via MongoDB hash store (skipped if MongoDB unavailable)
                     if self._mongo_available:
@@ -127,16 +126,12 @@ class BankIngestionService:
                             skipped_duplicates += 1
                             continue
 
-                    # Chunk the text
                     chunks = self.text_chunker.chunk_text(text, enhanced=True)
                     if not chunks:
                         continue
 
-                    # Generate embeddings
-                    embeddings = self.embedding_service.generate_embeddings(chunks)
-                    chunks_with_payload = []
-                    for idx, (chunk_text, _) in enumerate(zip(chunks, embeddings)):
-                        chunks_with_payload.append({
+                    for idx, chunk_text in enumerate(chunks):
+                        all_chunks_with_payload.append({
                             "text": chunk_text,
                             "source_type": item.get("source_type", "unknown"),
                             "source_url": item.get("url", ""),
@@ -146,22 +141,30 @@ class BankIngestionService:
                             "bank": "SBI",
                             "chunk_index": idx,
                             "total_chunks": len(chunks),
-                            # Include dummy fields QdrantService expects
                             "document_id": content_hash,
                             "filename": item.get("title", "SBI Document"),
                             "page_number": 0,
                             "timestamp": ingestion_date,
                         })
 
-                    # Store in Qdrant SBI_BANK_DATA
-                    self.qdrant_service.store_chunks(
-                        chunks_with_payload, embeddings, collection_name=self.collection_name
-                    )
-                    new_chunks_stored += len(chunks)
-
                 except Exception as e:
                     errors.append(f"Item processing error ({item.get('url', 'unknown')}): {str(e)}")
                     logger.error(f"Failed to process item: {e}", exc_info=True)
+
+            # 3. Single batch embed + store for all collected chunks
+            if all_chunks_with_payload:
+                try:
+                    texts = [c["text"] for c in all_chunks_with_payload]
+                    logger.info(f"Generating embeddings for {len(texts)} chunks in one batch")
+                    embeddings = self.embedding_service.generate_embeddings(texts)
+                    self.qdrant_service.store_chunks(
+                        all_chunks_with_payload, embeddings, collection_name=self.collection_name
+                    )
+                    new_chunks_stored = len(all_chunks_with_payload)
+                    logger.info(f"Stored {new_chunks_stored} chunks in Qdrant")
+                except Exception as e:
+                    errors.append(f"Batch embed/store error: {str(e)}")
+                    logger.error(f"Failed to batch embed/store chunks: {e}", exc_info=True)
 
             # 3. Log the run
             status = "success" if not errors else ("partial" if new_chunks_stored > 0 else "failed")

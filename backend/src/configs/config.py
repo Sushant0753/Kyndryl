@@ -147,21 +147,39 @@ class ElevenLabsSettings(BaseSettings):
 class SBIIngestionSettings(BaseSettings):
     """SBI data ingestion configuration — web scraping, PDF downloads, RSS feeds, and Qdrant collection settings"""
 
-    SBI_BASE_URL: str = "https://sbi.co.in"
+    # sbi.co.in redirects to sbi.bank.in; use the destination domain directly
+    SBI_BASE_URL: str = "https://sbi.bank.in"
     SBI_SCRAPE_PAGES: List[str] = [
         "/web/personal-banking/accounts",
         "/web/personal-banking/loans",
-        "/web/personal-banking/investments",
+        "/web/personal-banking/deposits",
+        "/web/personal-banking/investments-and-insurance",
         "/web/home/interest-rates",
-        "/web/home/faqs"
+        "/web/home/faqs",
     ]
     SBI_PDF_LISTING_URLS: List[str] = [
         "/web/corporate-governance/annual-reports"
     ]
     SBI_RSS_FEEDS: List[str] = [
-        "https://news.google.com/rss/search?q=State+Bank+of+India&hl=en-IN&gl=IN&ceid=IN:en"
+        "https://news.google.com/rss/search?q=State+Bank+of+India&hl=en-IN&gl=IN&ceid=IN:en",
+        "https://economictimes.indiatimes.com/industry/banking/finance/banking/rssfeeds/13358259.cms",
     ]
     SBI_PRESS_RELEASE_URL: str = "/web/media/press-releases"
+    SBI_SITEMAP_FALLBACK_URLS: List[str] = [
+        "https://sbi.bank.in/webfiles/uploads/files_2526/sitemap.xml",
+    ]
+    SBI_SITEMAP_MAX_PAGES: int = 400
+    SBI_WIKIPEDIA_ARTICLES: List[str] = [
+        "State_Bank_of_India",
+        "SBI_Cards_and_Payment_Services",
+        "SBI_Life_Insurance",
+        "SBI_Mutual_Fund",
+    ]
+    SBI_WIKIPEDIA_API_URL: str = (
+        "https://en.wikipedia.org/w/api.php"
+        "?action=query&prop=extracts&titles={title}"
+        "&format=json&explaintext=1&exsectionformat=plain"
+    )
     SBI_INGESTION_SCHEDULE_HOUR: int = 2
     SBI_MAX_PDFS_PER_RUN: int = 5
     SBI_COLLECTION_NAME: str = "SBI_BANK_DATA"
