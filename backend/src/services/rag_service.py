@@ -178,14 +178,18 @@ class RAGService:
                     english_query = translated
                     logger.info(f"Translated query: '{english_query[:50]}...'")
 
-            # Step 3.5: Search SBI knowledge base before falling back to LLM-only
-            query_embedding = self.embedding_service.generate_single_embedding(english_query)
-            sbi_chunks = self.qdrant_service.search_similar_chunks(
-                query_embedding=query_embedding,
-                limit=15,
-                score_threshold=0.3,
-                collection_name=self.SBI_COLLECTION_NAME
-            )
+            # Step 3.5: Try SBI knowledge base before falling back to LLM-only
+            try:
+                query_embedding = self.embedding_service.generate_single_embedding(english_query)
+                sbi_chunks = self.qdrant_service.search_similar_chunks(
+                    query_embedding=query_embedding,
+                    limit=15,
+                    score_threshold=0.3,
+                    collection_name=self.SBI_COLLECTION_NAME
+                )
+            except Exception as sbi_err:
+                logger.warning(f"SBI knowledge base search failed, falling back to LLM: {sbi_err}")
+                sbi_chunks = []
 
             if sbi_chunks:
                 logger.info(f"Found {len(sbi_chunks)} SBI knowledge base chunks — using RAG path")
@@ -232,14 +236,13 @@ class RAGService:
             str: Formatted context string
         """
         context_parts = []
-        for idx, chunk in enumerate(chunks, 1):
+        for chunk in chunks:
             source_info = chunk.get('source_title', chunk.get('filename', 'SBI Document'))
-            source_url = chunk.get('source_url', '')
             source_type = chunk.get('source_type', 'document')
             context_part = (
                 f"[Source: {source_info} ({source_type}), "
-                f"Relevance Score: {chunk['score']:.3f}]\n"
-                f"{chunk['text']}\n"
+                f"Relevance Score: {chunk.get('score', 0.0):.3f}]\n"
+                f"{chunk.get('text', '')}\n"
             )
             context_parts.append(context_part)
         formatted_context = "\n---\n".join(context_parts)
