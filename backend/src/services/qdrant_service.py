@@ -56,7 +56,58 @@ class QdrantService:
             logger.error(f"Error ensuring collection exists: {e}", exc_info=True)
             raise
 
-    def store_chunks(self, chunks_with_metadata: List[Dict], embeddings: List[List[float]]):
+    def ensure_collection(self, collection_name: str):
+        """Create collection if it doesn't exist (for non-default collections).
+
+        Args:
+            collection_name: Name of the Qdrant collection to ensure exists.
+                             For SBI_BANK_DATA a payload index on 'content_hash'
+                             is created to support deduplication lookups.
+        """
+        try:
+            collections = self.client.get_collections().collections
+            collection_exists = any(col.name == collection_name for col in collections)
+
+            if not collection_exists:
+                self.client.create_collection(
+                    collection_name=collection_name,
+                    vectors_config=VectorParams(
+                        size=self.azure_settings.EMBEDDING_DIMENSION,  # 3072
+                        distance=Distance.COSINE
+                    )
+                )
+                logger.info(f"Created Qdrant collection: {collection_name}")
+
+                # Index document_id for efficient filtering
+                self.client.create_payload_index(
+                    collection_name=collection_name,
+                    field_name="document_id",
+                    field_schema="keyword"
+                )
+                logger.info(f"Created payload index on document_id for {collection_name}")
+
+                # For SBI_BANK_DATA create an additional index on content_hash for dedup lookups
+                if collection_name == "SBI_BANK_DATA":
+                    self.client.create_payload_index(
+                        collection_name=collection_name,
+                        field_name="content_hash",
+                        field_schema="keyword"
+                    )
+                    logger.info(f"Created payload index on content_hash for {collection_name}")
+
+            else:
+                logger.info(f"Qdrant collection already exists: {collection_name}")
+
+        except Exception as e:
+            logger.error(f"Error ensuring collection exists ({collection_name}): {e}", exc_info=True)
+            raise
+
+    def store_chunks(
+        self,
+        chunks_with_metadata: List[Dict],
+        embeddings: List[List[float]],
+        collection_name: Optional[str] = None
+    ):
         """
         Store document chunks with embeddings in Qdrant.
         Uploads in batches of 100 points.
@@ -64,7 +115,10 @@ class QdrantService:
         Args:
             chunks_with_metadata: List of chunk dictionaries with metadata
             embeddings: List of 3072-dimensional embeddings
+            collection_name: Target collection (defaults to self.collection_name)
         """
+        target_collection = collection_name or self.collection_name
+
         if len(chunks_with_metadata) != len(embeddings):
             raise ValueError(
                 f"Mismatch between chunks ({len(chunks_with_metadata)}) "
@@ -94,19 +148,20 @@ class QdrantService:
         for i in range(0, len(points), batch_size):
             batch = points[i:i+batch_size]
             self.client.upsert(
-                collection_name=self.collection_name,
+                collection_name=target_collection,
                 points=batch
             )
-            logger.info(f"Uploaded batch {i//batch_size + 1}: {len(batch)} points")
+            logger.info(f"Uploaded batch {i//batch_size + 1}: {len(batch)} points to {target_collection}")
 
-        logger.info(f"Total points stored in Qdrant: {len(points)}")
+        logger.info(f"Total points stored in Qdrant ({target_collection}): {len(points)}")
 
     def search_similar_chunks(
         self,
         query_embedding: List[float],
         document_id: Optional[str] = None,
         limit: int = 30,
-        score_threshold: float = 0.1
+        score_threshold: float = 0.1,
+        collection_name: Optional[str] = None
     ) -> List[Dict]:
         """
         Semantic search in Qdrant
@@ -116,10 +171,13 @@ class QdrantService:
             document_id: Optional filter by specific document
             limit: Top K results to return
             score_threshold: Minimum similarity score
+            collection_name: Target collection (defaults to self.collection_name)
 
         Returns:
             List[Dict]: List of matching chunks with metadata
         """
+        target_collection = collection_name or self.collection_name
+
         try:
             # Build filter for document_id if provided
             query_filter = None
@@ -136,7 +194,7 @@ class QdrantService:
 
             # Perform search
             search_result = self.client.search(
-                collection_name=self.collection_name,
+                collection_name=target_collection,
                 query_vector=query_embedding,
                 query_filter=query_filter,
                 limit=limit,
@@ -156,13 +214,13 @@ class QdrantService:
                 })
 
             logger.info(
-                f"Search completed: Found {len(results)} results "
+                f"Search completed in {target_collection}: Found {len(results)} results "
                 f"(limit={limit}, threshold={score_threshold})"
             )
             return results
 
         except Exception as e:
-            logger.error(f"Failed to search Qdrant: {e}", exc_info=True)
+            logger.error(f"Failed to search Qdrant ({target_collection}): {e}", exc_info=True)
             raise
 
     def delete_by_document_id(self, document_id: str) -> bool:
