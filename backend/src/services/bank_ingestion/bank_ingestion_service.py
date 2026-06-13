@@ -27,17 +27,27 @@ class BankIngestionService:
     def __init__(self):
         self.settings = SBIIngestionSettings()
         self.db_settings = DocumentDB()
-        self.mongo_client = AsyncIOMotorClient(self.db_settings.DOCUMENT_DB_CONNECTION_STRING)
-        self.db = self.mongo_client[self.db_settings.DATABASE_NAME]
-        self.logs_collection = self.db["bank_ingestion_logs"]
-        self.hashes_collection = self.db["bank_ingestion_hashes"]
         self.embedding_service = EmbeddingService()
         self.qdrant_service = QdrantService()
         self.text_chunker = TextChunker()
         self.collection_name = self.settings.SBI_COLLECTION_NAME  # "SBI_BANK_DATA"
-        # Ensure SBI_BANK_DATA collection exists in Qdrant on startup
         self.qdrant_service.ensure_collection(self.collection_name)
-        logger.info("BankIngestionService initialized")
+
+        # MongoDB is optional — used for dedup and run logging only.
+        # If Atlas is unreachable (e.g. paused free tier), ingestion still runs.
+        try:
+            self.mongo_client = AsyncIOMotorClient(self.db_settings.DOCUMENT_DB_CONNECTION_STRING)
+            db = self.mongo_client[self.db_settings.DATABASE_NAME]
+            self.logs_collection = db["bank_ingestion_logs"]
+            self.hashes_collection = db["bank_ingestion_hashes"]
+            self._mongo_available = True
+        except Exception as e:
+            logger.warning(f"MongoDB unavailable — running without dedup/logging: {e}")
+            self.logs_collection = None
+            self.hashes_collection = None
+            self._mongo_available = False
+
+        logger.info(f"BankIngestionService initialized (mongo={'on' if self._mongo_available else 'off'})")
 
     async def run_full_ingestion(self) -> Dict:
         """
@@ -54,8 +64,9 @@ class BankIngestionService:
         errors = []
 
         try:
-            # Ensure unique index on hash to prevent race conditions
-            await self.hashes_collection.create_index("hash", unique=True, background=True)
+            # Ensure unique index on hash to prevent race conditions (skip if MongoDB unavailable)
+            if self._mongo_available:
+                await self.hashes_collection.create_index("hash", unique=True, background=True)
             # 1. Collect raw data from all sources
             raw_items = []
 
@@ -101,19 +112,20 @@ class BankIngestionService:
                     content_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()
                     ingestion_date = datetime.now(timezone.utc).isoformat()
 
-                    # Atomic upsert — avoids TOCTOU race between find_one and insert_one
-                    result = await self.hashes_collection.update_one(
-                        {"hash": content_hash},
-                        {"$setOnInsert": {
-                            "hash": content_hash,
-                            "source_url": item.get("url", ""),
-                            "ingested_at": ingestion_date
-                        }},
-                        upsert=True
-                    )
-                    if result.matched_count > 0:  # document already existed
-                        skipped_duplicates += 1
-                        continue
+                    # Dedup via MongoDB hash store (skipped if MongoDB unavailable)
+                    if self._mongo_available:
+                        result = await self.hashes_collection.update_one(
+                            {"hash": content_hash},
+                            {"$setOnInsert": {
+                                "hash": content_hash,
+                                "source_url": item.get("url", ""),
+                                "ingested_at": ingestion_date
+                            }},
+                            upsert=True
+                        )
+                        if result.matched_count > 0:  # document already existed
+                            skipped_duplicates += 1
+                            continue
 
                     # Chunk the text
                     chunks = self.text_chunker.chunk_text(text, enhanced=True)
@@ -176,15 +188,18 @@ class BankIngestionService:
             logger.error(f"Fatal error in ingestion run {run_id}: {e}", exc_info=True)
             raise
 
-        try:
-            await self.logs_collection.insert_one(run_log)
-        except Exception as log_err:
-            logger.warning(f"Failed to write ingestion run log: {log_err}", exc_info=True)
+        if self._mongo_available:
+            try:
+                await self.logs_collection.insert_one(run_log)
+            except Exception as log_err:
+                logger.warning(f"Failed to write ingestion run log: {log_err}", exc_info=True)
 
         return run_log
 
     async def get_last_run_status(self) -> Optional[Dict]:
         """Get the most recent ingestion run log."""
+        if not self._mongo_available:
+            return None
         try:
             doc = await self.logs_collection.find_one(
                 sort=[("started_at", -1)]
