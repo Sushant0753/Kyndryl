@@ -249,3 +249,17 @@ class QdrantService:
         except Exception as e:
             logger.error(f"Failed to get collection info: {e}", exc_info=True)
             return {}
+
+    def get_collection_info_for(self, collection_name: str) -> Dict:
+        """Get info for a specific collection by name."""
+        try:
+            info = self.client.get_collection(collection_name)
+            return {
+                "collection_name": collection_name,
+                "points_count": info.points_count,
+                "vector_size": info.config.params.vectors.size,
+                "distance": info.config.params.vectors.distance
+            }
+        except Exception as e:
+            logger.error(f"Failed to get collection info for {collection_name}: {e}", exc_info=True)
+            return {"collection_name": collection_name, "points_count": 0}
