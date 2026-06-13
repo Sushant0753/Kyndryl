@@ -145,6 +145,8 @@ class ElevenLabsSettings(BaseSettings):
     ELEVENLABS_MODEL_ID:str="eleven_multilingual_v2"
 
 class SBIIngestionSettings(BaseSettings):
+    """SBI data ingestion configuration — web scraping, PDF downloads, RSS feeds, and Qdrant collection settings"""
+
     SBI_BASE_URL: str = "https://sbi.co.in"
     SBI_SCRAPE_PAGES: List[str] = [
         "/web/personal-banking/accounts",
