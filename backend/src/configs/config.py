@@ -144,5 +144,28 @@ class ElevenLabsSettings(BaseSettings):
     ELEVENLABS_API_URL:str="https://api.elevenlabs.io/v1"
     ELEVENLABS_MODEL_ID:str="eleven_multilingual_v2"
 
+class SBIIngestionSettings(BaseSettings):
+    SBI_BASE_URL: str = "https://sbi.co.in"
+    SBI_SCRAPE_PAGES: List[str] = [
+        "/web/personal-banking/accounts",
+        "/web/personal-banking/loans",
+        "/web/personal-banking/investments",
+        "/web/home/interest-rates",
+        "/web/home/faqs"
+    ]
+    SBI_PDF_LISTING_URLS: List[str] = [
+        "/web/corporate-governance/annual-reports"
+    ]
+    SBI_RSS_FEEDS: List[str] = [
+        "https://news.google.com/rss/search?q=State+Bank+of+India&hl=en-IN&gl=IN&ceid=IN:en"
+    ]
+    SBI_PRESS_RELEASE_URL: str = "/web/media/press-releases"
+    SBI_INGESTION_SCHEDULE_HOUR: int = 2
+    SBI_MAX_PDFS_PER_RUN: int = 5
+    SBI_COLLECTION_NAME: str = "SBI_BANK_DATA"
+    SBI_REQUEST_TIMEOUT: int = 30
+    SBI_REQUEST_DELAY: float = 1.0
+
 mongo_db_settings=DocumentDB()
 enhanced_ocr_settings=EnhancedOCRSettings()
+sbi_ingestion_settings = SBIIngestionSettings()
