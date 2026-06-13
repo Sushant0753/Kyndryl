@@ -11,6 +11,8 @@ from lib.logger import logger
 class RAGService:
     """RAG pipeline orchestration service with multi-language support and sentiment awareness"""
 
+    SBI_COLLECTION_NAME = "SBI_BANK_DATA"
+
     def __init__(self):
         self.embedding_service = EmbeddingService()
         self.qdrant_service = QdrantService()
@@ -176,11 +178,30 @@ class RAGService:
                     english_query = translated
                     logger.info(f"Translated query: '{english_query[:50]}...'")
 
-            # Step 3: Generate sentiment-aware response in English
-            english_response = self.llm_service.generate_banking_response(
-                english_query,
-                sentiment_data=sentiment_data
+            # Step 3.5: Search SBI knowledge base before falling back to LLM-only
+            query_embedding = self.embedding_service.generate_single_embedding(english_query)
+            sbi_chunks = self.qdrant_service.search_similar_chunks(
+                query_embedding=query_embedding,
+                limit=15,
+                score_threshold=0.3,
+                collection_name=self.SBI_COLLECTION_NAME
             )
+
+            if sbi_chunks:
+                logger.info(f"Found {len(sbi_chunks)} SBI knowledge base chunks — using RAG path")
+                sbi_context = self._format_sbi_context(sbi_chunks)
+                english_response = self.llm_service.generate_response_with_context(
+                    query=english_query,
+                    context=sbi_context,
+                    sentiment_data=sentiment_data
+                )
+            else:
+                logger.info("No SBI knowledge base results — using direct LLM fallback")
+                # Step 3 (original): Generate sentiment-aware response in English
+                english_response = self.llm_service.generate_banking_response(
+                    english_query,
+                    sentiment_data=sentiment_data
+                )
 
             # Step 4: Translate response back to user's language
             final_response = english_response
@@ -197,6 +218,33 @@ class RAGService:
         except Exception as e:
             logger.error(f"Failed to process general query: {e}", exc_info=True)
             raise
+
+    def _format_sbi_context(self, chunks: List[Dict]) -> str:
+        """
+        Format retrieved SBI knowledge base chunks into context string.
+        Uses SBI-specific metadata (source_title, source_url, source_type)
+        instead of filename/page_number used for user-uploaded documents.
+
+        Args:
+            chunks: List of chunk dictionaries with SBI metadata
+
+        Returns:
+            str: Formatted context string
+        """
+        context_parts = []
+        for idx, chunk in enumerate(chunks, 1):
+            source_info = chunk.get('source_title', chunk.get('filename', 'SBI Document'))
+            source_url = chunk.get('source_url', '')
+            source_type = chunk.get('source_type', 'document')
+            context_part = (
+                f"[Source: {source_info} ({source_type}), "
+                f"Relevance Score: {chunk['score']:.3f}]\n"
+                f"{chunk['text']}\n"
+            )
+            context_parts.append(context_part)
+        formatted_context = "\n---\n".join(context_parts)
+        logger.info(f"Formatted SBI context from {len(chunks)} chunks")
+        return formatted_context
 
     def _format_context(self, chunks: List[Dict]) -> str:
         """
