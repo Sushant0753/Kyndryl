@@ -26,35 +26,8 @@ class QdrantService:
         logger.info(f"Qdrant Service initialized: Collection={self.collection_name}")
 
     def _ensure_collection_exists(self):
-        """Create collection if it doesn't exist"""
-        try:
-            collections = self.client.get_collections().collections
-            collection_exists = any(col.name == self.collection_name for col in collections)
-
-            if not collection_exists:
-                self.client.create_collection(
-                    collection_name=self.collection_name,
-                    vectors_config=VectorParams(
-                        size=self.azure_settings.EMBEDDING_DIMENSION,  # 3072
-                        distance=Distance.COSINE
-                    )
-                )
-                logger.info(f"Created Qdrant collection: {self.collection_name}")
-
-                # Create payload index for efficient filtering by document_id
-                self.client.create_payload_index(
-                    collection_name=self.collection_name,
-                    field_name="document_id",
-                    field_schema="keyword"
-                )
-                logger.info(f"Created payload index on document_id")
-
-            else:
-                logger.info(f"Qdrant collection already exists: {self.collection_name}")
-
-        except Exception as e:
-            logger.error(f"Error ensuring collection exists: {e}", exc_info=True)
-            raise
+        """Create collection if it doesn't exist. Delegates to ensure_collection."""
+        self.ensure_collection(self.collection_name)
 
     def ensure_collection(self, collection_name: str):
         """Create collection if it doesn't exist (for non-default collections).
@@ -86,14 +59,13 @@ class QdrantService:
                 )
                 logger.info(f"Created payload index on document_id for {collection_name}")
 
-                # For SBI_BANK_DATA create an additional index on content_hash for dedup lookups
-                if collection_name == "SBI_BANK_DATA":
-                    self.client.create_payload_index(
-                        collection_name=collection_name,
-                        field_name="content_hash",
-                        field_schema="keyword"
-                    )
-                    logger.info(f"Created payload index on content_hash for {collection_name}")
+                # Create an index on content_hash for dedup lookups (harmless and useful for all collections)
+                self.client.create_payload_index(
+                    collection_name=collection_name,
+                    field_name="content_hash",
+                    field_schema="keyword"
+                )
+                logger.info(f"Created payload index on content_hash for {collection_name}")
 
             else:
                 logger.info(f"Qdrant collection already exists: {collection_name}")
@@ -205,14 +177,17 @@ class QdrantService:
             # Format results
             results = []
             for hit in search_result:
-                results.append({
+                result = {
                     "text": hit.payload["text"],
                     "document_id": hit.payload["document_id"],
                     "filename": hit.payload["filename"],
                     "chunk_index": hit.payload["chunk_index"],
                     "page_number": hit.payload.get("page_number", 0),
-                    "score": hit.score
-                })
+                    "score": hit.score,
+                    # Optional SBI fields (present only for bank-ingested vectors)
+                    **{k: hit.payload[k] for k in ("source_type", "source_url", "source_title", "bank", "ingestion_date", "content_hash") if k in hit.payload},
+                }
+                results.append(result)
 
             logger.info(
                 f"Search completed in {target_collection}: Found {len(results)} results "
@@ -224,19 +199,21 @@ class QdrantService:
             logger.error(f"Failed to search Qdrant ({target_collection}): {e}", exc_info=True)
             raise
 
-    def delete_by_document_id(self, document_id: str) -> bool:
+    def delete_by_document_id(self, document_id: str, collection_name: Optional[str] = None) -> bool:
         """
         Delete all chunks for a specific document
 
         Args:
             document_id: UUID of the document
+            collection_name: Target collection (defaults to self.collection_name)
 
         Returns:
             bool: True if successful, False otherwise
         """
+        target_collection = collection_name or self.collection_name
         try:
             self.client.delete(
-                collection_name=self.collection_name,
+                collection_name=target_collection,
                 points_selector=Filter(
                     must=[
                         FieldCondition(
@@ -246,11 +223,11 @@ class QdrantService:
                     ]
                 )
             )
-            logger.info(f"Deleted all chunks for document_id={document_id}")
+            logger.info(f"Deleted all chunks for document_id={document_id} from {target_collection}")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to delete chunks for document_id={document_id}: {e}", exc_info=True)
+            logger.error(f"Failed to delete chunks for document_id={document_id} ({target_collection}): {e}", exc_info=True)
             return False
 
     def get_collection_info(self) -> Dict:

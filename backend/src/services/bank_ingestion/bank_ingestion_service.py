@@ -50,10 +50,12 @@ class BankIngestionService:
 
         new_chunks_stored = 0
         skipped_duplicates = 0
-        sources_processed = 0
+        raw_items_collected = 0
         errors = []
 
         try:
+            # Ensure unique index on hash to prevent race conditions
+            await self.hashes_collection.create_index("hash", unique=True, background=True)
             # 1. Collect raw data from all sources
             raw_items = []
 
@@ -86,8 +88,8 @@ class BankIngestionService:
                 errors.append(f"RSS service error: {str(e)}")
                 logger.error(f"RSS service failed: {e}", exc_info=True)
 
-            sources_processed = len(raw_items)
-            logger.info(f"Total raw items collected: {sources_processed}")
+            raw_items_collected = len(raw_items)
+            logger.info(f"Total raw items collected: {raw_items_collected}")
 
             # 2. Process each item: deduplicate, chunk, embed, store
             for item in raw_items:
@@ -97,10 +99,19 @@ class BankIngestionService:
                         continue
 
                     content_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()
+                    ingestion_date = datetime.now(timezone.utc).isoformat()
 
-                    # Check if already ingested
-                    existing = await self.hashes_collection.find_one({"hash": content_hash})
-                    if existing:
+                    # Atomic upsert — avoids TOCTOU race between find_one and insert_one
+                    result = await self.hashes_collection.update_one(
+                        {"hash": content_hash},
+                        {"$setOnInsert": {
+                            "hash": content_hash,
+                            "source_url": item.get("url", ""),
+                            "ingested_at": ingestion_date
+                        }},
+                        upsert=True
+                    )
+                    if result.matched_count > 0:  # document already existed
                         skipped_duplicates += 1
                         continue
 
@@ -111,9 +122,6 @@ class BankIngestionService:
 
                     # Generate embeddings
                     embeddings = self.embedding_service.generate_embeddings(chunks)
-
-                    # Build Qdrant payload for each chunk
-                    ingestion_date = datetime.now(timezone.utc).isoformat()
                     chunks_with_payload = []
                     for idx, (chunk_text, _) in enumerate(zip(chunks, embeddings)):
                         chunks_with_payload.append({
@@ -139,13 +147,6 @@ class BankIngestionService:
                     )
                     new_chunks_stored += len(chunks)
 
-                    # Mark hash as ingested
-                    await self.hashes_collection.insert_one({
-                        "hash": content_hash,
-                        "source_url": item.get("url", ""),
-                        "ingested_at": datetime.now(timezone.utc).isoformat()
-                    })
-
                 except Exception as e:
                     errors.append(f"Item processing error ({item.get('url', 'unknown')}): {str(e)}")
                     logger.error(f"Failed to process item: {e}", exc_info=True)
@@ -159,23 +160,28 @@ class BankIngestionService:
                 "started_at": started_at.isoformat(),
                 "completed_at": completed_at.isoformat(),
                 "status": status,
-                "sources_processed": sources_processed,
+                "raw_items_collected": raw_items_collected,
                 "new_chunks_stored": new_chunks_stored,
                 "skipped_duplicates": skipped_duplicates,
                 "errors": errors
             }
-            await self.logs_collection.insert_one(run_log)
 
             logger.info(
                 f"Ingestion run {run_id} completed: "
                 f"status={status}, new_chunks={new_chunks_stored}, "
                 f"skipped={skipped_duplicates}, errors={len(errors)}"
             )
-            return run_log
 
         except Exception as e:
             logger.error(f"Fatal error in ingestion run {run_id}: {e}", exc_info=True)
             raise
+
+        try:
+            await self.logs_collection.insert_one(run_log)
+        except Exception as log_err:
+            logger.warning(f"Failed to write ingestion run log: {log_err}", exc_info=True)
+
+        return run_log
 
     async def get_last_run_status(self) -> Optional[Dict]:
         """Get the most recent ingestion run log."""
