@@ -2,7 +2,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from configs.config import SBIIngestionSettings
 from lib.logger import logger
-import asyncio
 
 
 _scheduler = None
@@ -52,5 +51,5 @@ def stop_scheduler():
     """Stop the global scheduler."""
     global _scheduler
     if _scheduler and _scheduler.running:
-        _scheduler.shutdown(wait=False)
+        _scheduler.shutdown(wait=True)
         logger.info("APScheduler stopped")

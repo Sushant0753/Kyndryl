@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 from lib.logger import logger
@@ -54,10 +54,17 @@ async def get_ingestion_status():
         vector_count = collection_info.get("points_count", 0)
     except Exception as e:
         logger.warning(f"Could not get Qdrant collection info: {e}")
-        vector_count = -1
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Vector database unavailable"
+        )
 
-    bank_service = BankIngestionService()
-    last_run = await bank_service.get_last_run_status()
+    try:
+        bank_service = BankIngestionService()
+        last_run = await bank_service.get_last_run_status()
+    except Exception as e:
+        logger.warning(f"Could not get ingestion status from MongoDB: {e}")
+        last_run = None
 
     scheduler = get_scheduler()
     scheduler_running = scheduler is not None and scheduler.running
