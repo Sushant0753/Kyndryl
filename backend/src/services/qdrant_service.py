@@ -137,7 +137,8 @@ class QdrantService:
                     "total_chunks": chunk_data['total_chunks'],
                     "filename": chunk_data['filename'],
                     "page_number": chunk_data.get('page_number', 0),
-                    "timestamp": chunk_data['timestamp']
+                    "timestamp": chunk_data['timestamp'],
+                    **{k: chunk_data[k] for k in ("source_type", "source_url", "source_title", "content_hash", "bank", "ingestion_date") if k in chunk_data},
                 },
                 vector=embedding
             )
