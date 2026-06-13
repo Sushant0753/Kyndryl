@@ -1,13 +1,13 @@
 import time
-from io import BytesIO
 from typing import List, Dict
+from urllib.parse import urljoin
 
-import fitz  # PyMuPDF
 import requests
 from bs4 import BeautifulSoup
 
 from configs.config import SBIIngestionSettings
 from lib.logger import logger
+from services.ocr.pdf_processor import PDFProcessor
 
 
 class SBIPDFDownloader:
@@ -24,7 +24,14 @@ class SBIPDFDownloader:
             )
         })
         self.timeout = self.settings.SBI_REQUEST_TIMEOUT
+        self.pdf_processor = PDFProcessor()
         logger.info("SBIPDFDownloader initialized")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.session.close()
 
     def download_and_extract(self) -> List[Dict]:
         """
@@ -51,13 +58,19 @@ class SBIPDFDownloader:
 
             for pdf_url in pdf_links:
                 try:
+                    # Check size via HEAD request first
+                    head = self.session.head(pdf_url, timeout=self.settings.SBI_REQUEST_TIMEOUT)
+                    content_length = int(head.headers.get('content-length', 0))
+                    max_pdf_bytes = 50 * 1024 * 1024  # 50 MB
+                    if content_length > max_pdf_bytes:
+                        logger.warning(f"Skipping PDF (too large: {content_length} bytes): {pdf_url}")
+                        continue
+
                     response = self.session.get(pdf_url, timeout=self.timeout)
                     response.raise_for_status()
 
-                    pdf_bytes = BytesIO(response.content)
-                    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-                    text = "".join(page.get_text() for page in doc)
-                    doc.close()
+                    pdf_content = response.content
+                    text = self.pdf_processor.extract_text_only(pdf_content)
 
                     if len(text) < 200:
                         logger.warning(
@@ -103,13 +116,7 @@ class SBIPDFDownloader:
         for anchor in soup.find_all("a", href=True):
             href: str = anchor["href"]
             if href.lower().endswith(".pdf"):
-                if href.startswith("http://") or href.startswith("https://"):
-                    absolute_url = href
-                elif href.startswith("/"):
-                    absolute_url = self.settings.SBI_BASE_URL + href
-                else:
-                    absolute_url = self.settings.SBI_BASE_URL + "/" + href
-
+                absolute_url = urljoin(self.settings.SBI_BASE_URL, href)
                 pdf_links.append(absolute_url)
 
                 if len(pdf_links) >= self.settings.SBI_MAX_PDFS_PER_RUN:

@@ -24,6 +24,12 @@ class SBIWebScraper:
         self.timeout = self.settings.SBI_REQUEST_TIMEOUT
         logger.info("SBIWebScraper initialized")
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.session.close()
+
     def scrape_pages(self) -> List[Dict]:
         """
         Scrape all configured SBI website pages.
@@ -66,7 +72,7 @@ class SBIWebScraper:
         title = title_tag.get_text(strip=True) if title_tag else "Unknown"
 
         # Remove noisy structural tags before text extraction
-        for tag in soup.find_all(["script", "style", "nav", "footer", "header"]):
+        for tag in soup.find_all(["script", "style", "nav", "footer", "header", "title"]):
             tag.decompose()
 
         text = soup.get_text(separator=" ", strip=True)
@@ -98,6 +104,7 @@ class SBIWebScraper:
             logger.info(
                 f"Scraped press releases page: {url} ({len(doc['text'])} chars)"
             )
+            time.sleep(self.settings.SBI_REQUEST_DELAY)
         except Exception as exc:
             logger.error(f"Failed to scrape press releases page {url}: {exc}")
         return results

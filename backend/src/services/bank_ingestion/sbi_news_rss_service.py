@@ -29,12 +29,16 @@ class SBINewsRSSService:
         for feed_url in self.settings.SBI_RSS_FEEDS:
             try:
                 feed = feedparser.parse(feed_url)
+                if feed.bozo:
+                    logger.error(f"RSS feed error for {feed_url}: {feed.bozo_exception}")
                 entries_collected = 0
 
                 for entry in feed.entries[:_MAX_ENTRIES_PER_FEED]:
                     title: str = entry.get("title", "Unknown")
-                    raw_text: str = entry.get("summary", "") or entry.get(
-                        "description", ""
+                    raw_text: str = (
+                        entry.get('summary', '')
+                        or entry.get('description', '')
+                        or (entry.get('content') or [{}])[0].get('value', '')
                     )
                     text = self._strip_html(raw_text)
                     url: str = entry.get("link", "")
