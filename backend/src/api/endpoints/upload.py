@@ -53,12 +53,12 @@ async def upload_document(file: UploadFile = File(...)):
 
         logger.info(f"Upload started with Enhanced OCR Service: {file.filename}")
 
-        # Validate Enhanced OCR Service availability
+        # Validate Enhanced OCR Service availability (PDF processing is always available)
         if not enhanced_ocr_service.is_available():
-            logger.error("Enhanced OCR Service is not available")
+            logger.error("Enhanced OCR Service is not available - PDF processor unavailable")
             raise HTTPException(
                 status_code=503,
-                detail="OCR services are temporarily unavailable. Please try again later."
+                detail="Document processing services are temporarily unavailable. Please try again later."
             )
 
         # Step 1: Validate file
@@ -79,8 +79,19 @@ async def upload_document(file: UploadFile = File(...)):
         filename = file.filename or "unknown_file"
 
         if file_extension in doc_settings.IMAGE_EXTENSIONS:
-            # Enhanced image OCR processing
+            # Enhanced image OCR processing (requires Tesseract)
             logger.info(f"Processing image file with Enhanced OCR Service: {filename}")
+
+            # Check if image processing is available
+            if not enhanced_ocr_service.is_image_processing_available():
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Image OCR processing is not available. Tesseract OCR is not installed. "
+                        "Please install Tesseract (https://github.com/tesseract-ocr/tesseract) "
+                        "or upload PDF files instead."
+                    )
+                )
 
             # Process image with enhanced OCR
             chunks_with_metadata, total_pages, processing_type = enhanced_ocr_service.process_document(
@@ -242,21 +253,32 @@ async def get_upload_service_status():
         enhanced_ocr_service = EnhancedOCRService()
         processing_stats = enhanced_ocr_service.get_processing_statistics()
 
+        pdf_available = enhanced_ocr_service.is_available()
+        image_available = enhanced_ocr_service.is_image_processing_available()
+
+        status = "fully_available" if (pdf_available and image_available) else \
+                 "pdf_only" if pdf_available else "unavailable"
+
         return {
             "service_name": "Enhanced Document Upload Service",
-            "status": "available" if enhanced_ocr_service.is_available() else "unavailable",
+            "status": status,
+            "pdf_processing": "available" if pdf_available else "unavailable",
+            "image_processing": "available" if image_available else "unavailable (Tesseract not installed)",
             "enhanced_ocr_service": processing_stats,
             "supported_formats": {
-                "images": [".jpg", ".jpeg", ".png"],
-                "documents": [".pdf"]
+                "documents": [".pdf"] if pdf_available else [],
+                "images": [".jpg", ".jpeg", ".png"] if image_available else []
             },
             "features": [
-                "Enhanced OCR with multiple extraction methods",
-                "Advanced PDF text extraction with metadata",
+                "Advanced PDF text extraction with metadata" if pdf_available else None,
+                "Enhanced OCR with multiple extraction methods" if image_available else None,
                 "Context-aware text chunking",
                 "Confidence scoring and quality assessment",
                 "Multi-language support",
                 "Comprehensive processing metadata"
+            ],
+            "warnings": [] if image_available else [
+                "Image OCR is unavailable. Install Tesseract to enable image processing: https://github.com/tesseract-ocr/tesseract"
             ]
         }
     except Exception as e:

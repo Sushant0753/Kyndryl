@@ -131,9 +131,19 @@ class EnhancedOCRService:
 
         Returns:
             tuple: (chunks_with_metadata, 1, 'ocr')
+
+        Raises:
+            RuntimeError: If Tesseract is not installed
         """
         try:
             logger.info(f"Processing image document: {filename}")
+
+            # Check if image processing is available (requires Tesseract)
+            if not self.image_processor.is_available():
+                raise RuntimeError(
+                    "Image OCR processing is not available. Tesseract OCR is not installed. "
+                    "Please install Tesseract to process image files, or upload PDF files instead."
+                )
 
             # Extract text using enhanced image processor
             extraction_result = self.image_processor.extract_text_with_metadata(
@@ -274,14 +284,21 @@ class EnhancedOCRService:
         Returns:
             dict: Service statistics and health info
         """
+        pdf_available = self.pdf_processor.is_available()
+        image_available = self.image_processor.is_available()
+
         return {
             "service_name": "Enhanced OCR Service",
-            "pdf_processor_available": self.pdf_processor.is_available(),
-            "image_processor_available": self.image_processor.is_available(),
-            "supported_languages": self.image_processor.get_supported_languages(),
+            "pdf_processor_available": pdf_available,
+            "image_processor_available": image_available,
+            "supported_languages": self.image_processor.get_supported_languages() if image_available else [],
             "chunk_size": self.settings.CHUNK_SIZE,
             "chunk_overlap": self.settings.CHUNK_OVERLAP,
-            "ocr_languages": self.settings.OCR_LANGUAGES
+            "ocr_languages": self.settings.OCR_LANGUAGES if image_available else "N/A (Tesseract not installed)",
+            "notes": [
+                "PDF processing is always available",
+                "Image OCR requires Tesseract installation" if not image_available else "Image OCR is available"
+            ]
         }
 
     def is_available(self) -> bool:
@@ -289,12 +306,21 @@ class EnhancedOCRService:
         Check if the enhanced OCR service is available.
 
         Returns:
-            bool: True if all processors are available
+            bool: True if at least PDF processing is available
+                 (Image OCR is optional and requires Tesseract)
         """
-        return (
-            self.pdf_processor.is_available() and
-            self.image_processor.is_available()
-        )
+        # Service is available if PDF processor works
+        # Image processor is optional (requires Tesseract installation)
+        return self.pdf_processor.is_available()
+
+    def is_image_processing_available(self) -> bool:
+        """
+        Check if image OCR processing is available (requires Tesseract).
+
+        Returns:
+            bool: True if Tesseract is installed and image processing is available
+        """
+        return self.image_processor.is_available()
 
     def validate_processing_quality(
         self,
