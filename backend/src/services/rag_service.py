@@ -83,12 +83,17 @@ class RAGService:
 
             # Step 2: Translate to English if needed
             english_query = user_query
+            translation_succeeded = False
             if detected_language != 'en':
                 logger.info(f"Translating query from {detected_language} to English")
                 translated = self.translation_service.translate(user_query, detected_language, 'en')
-                if translated:
+                if translated and translated != user_query:
                     english_query = translated
+                    translation_succeeded = True
                     logger.info(f"Translated query: '{english_query[:50]}...'")
+
+            # When translation is unavailable, LLM must respond directly in the user's language
+            llm_response_language = 'en' if translation_succeeded else detected_language
 
             # Step 3: Generate query embedding
             query_embedding = self.embedding_service.generate_single_embedding(english_query)
@@ -106,7 +111,7 @@ class RAGService:
                 no_info_message = "I couldn't find relevant information in the documents to answer your question. Please try rephrasing or ask a different question."
 
                 # Translate "no info" message if needed
-                if detected_language != 'en':
+                if detected_language != 'en' and translation_succeeded:
                     translated_message = self.translation_service.translate(no_info_message, 'en', detected_language)
                     if translated_message:
                         no_info_message = translated_message
@@ -116,16 +121,17 @@ class RAGService:
             # Step 5: Format context
             context = self._format_context(retrieved_chunks)
 
-            # Step 6: Generate sentiment-aware response in English
+            # Step 6: Generate sentiment-aware response
             english_response = self.llm_service.generate_response_with_context(
                 query=english_query,
                 context=context,
-                sentiment_data=sentiment_data
+                sentiment_data=sentiment_data,
+                response_language=llm_response_language
             )
 
-            # Step 7: Translate response back to user's language
+            # Step 7: Translate response back to user's language (only when translation was available)
             final_response = english_response
-            if detected_language != 'en':
+            if detected_language != 'en' and translation_succeeded:
                 logger.info(f"Translating response from English to {detected_language}")
                 translated_response = self.translation_service.translate(english_response, 'en', detected_language)
                 if translated_response:
@@ -171,12 +177,17 @@ class RAGService:
 
             # Step 2: Translate to English if needed
             english_query = user_query
+            translation_succeeded = False
             if detected_language != 'en':
                 logger.info(f"Translating query from {detected_language} to English")
                 translated = self.translation_service.translate(user_query, detected_language, 'en')
-                if translated:
+                if translated and translated != user_query:
                     english_query = translated
+                    translation_succeeded = True
                     logger.info(f"Translated query: '{english_query[:50]}...'")
+
+            # When translation is unavailable, LLM must respond directly in the user's language
+            llm_response_language = 'en' if translation_succeeded else detected_language
 
             # Step 3.5: Try SBI knowledge base before falling back to LLM-only
             try:
@@ -197,19 +208,20 @@ class RAGService:
                 english_response = self.llm_service.generate_response_with_context(
                     query=english_query,
                     context=sbi_context,
-                    sentiment_data=sentiment_data
+                    sentiment_data=sentiment_data,
+                    response_language=llm_response_language
                 )
             else:
                 logger.info("No SBI knowledge base results — using direct LLM fallback")
-                # Step 3 (original): Generate sentiment-aware response in English
                 english_response = self.llm_service.generate_banking_response(
                     english_query,
-                    sentiment_data=sentiment_data
+                    sentiment_data=sentiment_data,
+                    response_language=llm_response_language
                 )
 
-            # Step 4: Translate response back to user's language
+            # Step 4: Translate response back to user's language (only when translation was available)
             final_response = english_response
-            if detected_language != 'en':
+            if detected_language != 'en' and translation_succeeded:
                 logger.info(f"Translating response from English to {detected_language}")
                 translated_response = self.translation_service.translate(english_response, 'en', detected_language)
                 if translated_response:

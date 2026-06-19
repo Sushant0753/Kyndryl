@@ -1,3 +1,4 @@
+import re
 import requests
 from typing import Optional
 from configs.config import ElevenLabsSettings
@@ -22,6 +23,14 @@ class ElevenLabsService:
             api_key_preview = f"{self.api_key[:8]}...{self.api_key[-4:]}" if len(self.api_key) > 12 else "****"
             logger.info(f"ElevenLabs TTS Service initialized: Voice ID={self.settings.ELEVENLABS_VOICE_ID}, API Key={api_key_preview}")
 
+    @staticmethod
+    def _strip_markdown(text: str) -> str:
+        text = re.sub(r'\*\*(.+?)\*\*', r'\1', text, flags=re.DOTALL)
+        text = re.sub(r'\*(.+?)\*', r'\1', text, flags=re.DOTALL)
+        text = re.sub(r'#{1,6}\s*', '', text)
+        text = re.sub(r'<[^>]+>', '', text)
+        return text.strip()
+
     def text_to_speech(self, text: str) -> Optional[bytes]:
         """
         Convert text to speech using ElevenLabs API
@@ -39,6 +48,8 @@ class ElevenLabsService:
         if not text or not text.strip():
             logger.warning("Empty text provided for TTS conversion")
             return None
+
+        text = self._strip_markdown(text)
 
         # Truncate text if too long (ElevenLabs has limits)
         max_length = 2500

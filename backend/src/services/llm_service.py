@@ -16,11 +16,36 @@ class LLMService:
         )
         logger.info(f"LLM Service initialized: Endpoint={self.settings.AZURE_OPENAI_CHAT_ENDPOINT}, Model={self.settings.AZURE_OPENAI_CHAT_DEPLOYMENT}, API Version={self.settings.AZURE_OPENAI_CHAT_API_VERSION}")
 
+    LANGUAGE_SCRIPT_MAP: Dict[str, str] = {
+        'hi': 'Hindi — Devanagari script (हिंदी)',
+        'bn': 'Bengali — Bengali script (বাংলা)',
+        'ta': 'Tamil — Tamil script (தமிழ்)',
+        'te': 'Telugu — Telugu script (తెలుగు)',
+        'mr': 'Marathi — Devanagari script (मराठी)',
+        'gu': 'Gujarati — Gujarati script (ગુજરાતી)',
+        'kn': 'Kannada — Kannada script (ಕನ್ನಡ)',
+        'ml': 'Malayalam — Malayalam script (മലയാളം)',
+        'pa': 'Punjabi — Gurmukhi script (ਪੰਜਾਬੀ)',
+        'ur': 'Urdu — Nastaliq script (اردو)',
+    }
+
+    def _build_language_override(self, language: str) -> Optional[str]:
+        lang_display = self.LANGUAGE_SCRIPT_MAP.get(language)
+        if not lang_display:
+            return None
+        return (
+            f"CRITICAL LANGUAGE OVERRIDE: The user is communicating in {lang_display}. "
+            f"Your ENTIRE response MUST be written in {lang_display}. "
+            f"Do NOT use English. Do NOT use Roman script. "
+            f"Every single word must be in the native script."
+        )
+
     def generate_response_with_context(
         self,
         query: str,
         context: str,
-        sentiment_data: Optional[Dict] = None
+        sentiment_data: Optional[Dict] = None,
+        response_language: str = 'en'
     ) -> str:
         """
         Generate sentiment-aware response using RAG context
@@ -56,6 +81,18 @@ TONE & STYLE:
 - No fear-inducing language
 - No unnecessary emojis (max 1 if it feels natural)
 - No long warnings unless truly important
+
+FORMATTING RULE (CRITICAL):
+- NEVER use markdown symbols: **, ##, *, -, >, etc.
+- Write clean plain text only. No bullet points with symbols.
+- Use numbers (1. 2. 3.) for lists if needed.
+
+LANGUAGE RULE (CRITICAL):
+- Detect the language of the user's query.
+- If the user writes in Hindi using Devanagari script, respond ENTIRELY in Hindi.
+- If the user writes in Hinglish (Hindi words in Roman/English script like 'main', 'kaise', 'kya', 'mein', 'chahiye'), respond ENTIRELY in Hindi using Devanagari script.
+- If the user writes in English, respond in English.
+- Never mix scripts in your response.
 
 CUSTOMER FIRST:
 - Point out fees, timelines, or documents only if relevant to the question.
@@ -107,13 +144,16 @@ User Question: {query}
 
 Please provide a clear, accurate answer based on the context above."""
 
+        messages = [{"role": "system", "content": system_prompt}]
+        lang_override = self._build_language_override(response_language)
+        if lang_override:
+            messages.append({"role": "system", "content": lang_override})
+        messages.append({"role": "user", "content": user_message})
+
         try:
             response = self.client.chat.completions.create(
                 model=self.settings.AZURE_OPENAI_CHAT_DEPLOYMENT,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message}
-                ],
+                messages=messages,
                 temperature=0.3
                 # max_completion_tokens=4000
             )
@@ -132,7 +172,7 @@ Please provide a clear, accurate answer based on the context above."""
             logger.error(f"Failed to generate response with context: {e}", exc_info=True)
             raise
 
-    def generate_banking_response(self, query: str, sentiment_data: Optional[Dict] = None) -> str:
+    def generate_banking_response(self, query: str, sentiment_data: Optional[Dict] = None, response_language: str = 'en') -> str:
         """
         Generate sentiment-aware response for general banking questions (no RAG)
 
@@ -173,6 +213,18 @@ TONE:
 - No heavy formatting
 - At most one emoji, only if it feels natural
 
+FORMATTING RULE (CRITICAL):
+- NEVER use markdown symbols: **, ##, *, -, >, etc.
+- Write clean plain text only. No bullet points with symbols.
+- Use numbers (1. 2. 3.) for lists if needed.
+
+LANGUAGE RULE (CRITICAL):
+- Detect the language of the user's query.
+- If the user writes in Hindi using Devanagari script, respond ENTIRELY in Hindi.
+- If the user writes in Hinglish (Hindi words in Roman/English script like 'main', 'kaise', 'kya', 'mein', 'chahiye'), respond ENTIRELY in Hindi using Devanagari script.
+- If the user writes in English, respond in English.
+- Never mix scripts in your response.
+
 Always end gently, for example:
 "Tell me if you want this explained more simply or step-by-step."
 """
@@ -207,13 +259,16 @@ EMPATHY LEVEL: {empathy_level}
         else:
             system_prompt = base_system_prompt
 
+        messages = [{"role": "system", "content": system_prompt}]
+        lang_override = self._build_language_override(response_language)
+        if lang_override:
+            messages.append({"role": "system", "content": lang_override})
+        messages.append({"role": "user", "content": query})
+
         try:
             response = self.client.chat.completions.create(
                 model=self.settings.AZURE_OPENAI_CHAT_DEPLOYMENT,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": query}
-                ],
+                messages=messages,
                 temperature=0.5,
                 # max_completion_tokens=4000
             )

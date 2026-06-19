@@ -20,6 +20,16 @@ class LanguageDetector:
         'ur': [(0x0600, 0x06FF)],  # Arabic script (Urdu)
     }
 
+    HINDI_ROMAN_KEYWORDS = frozenset([
+        'main', 'mein', 'kaise', 'kya', 'hai', 'hain', 'aap', 'mujhe',
+        'yeh', 'woh', 'abhi', 'bahut', 'accha', 'theek', 'nahin', 'nahi',
+        'hoga', 'karein', 'karna', 'mere', 'tera', 'uska', 'humara',
+        'apna', 'khata', 'paise', 'kholna', 'kholein', 'chahiye',
+        'milega', 'karo', 'bataiye', 'samjhao', 'zaroor', 'lekin', 'aur',
+        'toh', 'kyunki', 'isliye', 'phir', 'jab', 'tab', 'agar',
+        'batao', 'bataye', 'samjhe', 'samjha', 'boliye', 'bolo',
+    ])
+
     LANGUAGE_NAMES = {
         'en': 'English',
         'hi': 'Hindi (हिन्दी)',
@@ -103,6 +113,12 @@ class LanguageDetector:
                 return 'en'
 
             detected = LanguageDetector._detect_script(clean_text)
+
+            if detected == 'en':
+                words = set(re.findall(r'\b\w+\b', text.lower()))
+                if len(words & LanguageDetector.HINDI_ROMAN_KEYWORDS) >= 2:
+                    detected = 'hi'
+
             logger.info(f"Detected language: {detected} for text: '{text[:50]}...'")
 
             return detected

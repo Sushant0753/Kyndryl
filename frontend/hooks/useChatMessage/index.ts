@@ -13,10 +13,20 @@ function parseBackendResponse(rawResponse: string): string {
   try {
     const data = JSON.parse(rawResponse);
     const responseText = data.response || data.answer || data.content || JSON.stringify(data);
-    return responseText.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    return responseText.replace(/\*\*(.+?)\*\*/gs, "<strong>$1</strong>");
   } catch {
     return rawResponse;
   }
+}
+
+function speakWithBrowser(text: string, lang: string = 'en-IN') {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const plain = text.replace(/<[^>]+>/g, '').replace(/\*\*/g, '');
+  const utterance = new SpeechSynthesisUtterance(plain);
+  utterance.lang = lang;
+  utterance.rate = 0.95;
+  window.speechSynthesis.speak(utterance);
 }
 
 export function useChatMessage(initialMessages: ChatMessage[] = []) {
@@ -87,7 +97,8 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
 
       if (ttsEnabled && botResponseText) {
         try {
-          const ttsResult = await synthesizeSpeech(botResponseText);
+          const plainText = botResponseText.replace(/<[^>]+>/g, '');
+          const ttsResult = await synthesizeSpeech(plainText);
           setMessages((prev) =>
             prev.map((m) =>
               m.id === botMsgId
@@ -96,7 +107,8 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
             )
           );
         } catch (ttsErr) {
-          console.error("TTS Debug TTS synthesis failed:", ttsErr);
+          console.error("TTS synthesis failed, falling back to browser TTS:", ttsErr);
+          speakWithBrowser(botResponseText);
         }
       }
     } catch (err) {
@@ -144,18 +156,25 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
         )
       );
 
+      const botText = parseBackendResponse(JSON.stringify({ response: response.chat_response }));
+
       setMessages((prev) =>
         prev.map((m) =>
           m.id === botMsgId
             ? {
                 ...m,
-                text: response.chat_response,
+                text: botText,
                 audioUrl: response.audio_url,
                 isLoading: false
               }
             : m
         )
       );
+
+      if (voiceResponseEnabled && !response.audio_url && response.chat_response) {
+        const lang = response.detected_language === 'hi' ? 'hi-IN' : 'en-IN';
+        speakWithBrowser(response.chat_response, lang);
+      }
     } catch (err) {
       console.error("Voice Chat Error:", err);
       setMessages((prev) =>

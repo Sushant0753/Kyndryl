@@ -32,6 +32,10 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage, sendVoiceMessage
     const newValue = !ttsEnabled;
     setTtsEnabled(newValue);
     localStorage.setItem("ttsEnabled", newValue.toString());
+    if (!newValue) {
+      window.speechSynthesis?.cancel();
+      document.querySelectorAll<HTMLAudioElement>('audio').forEach(a => { a.pause(); a.currentTime = 0; });
+    }
   };
 
   const handleChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
