@@ -127,13 +127,14 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
     }
   };
 
-  const sendVoiceMessage = async (audioBlob: Blob, voiceResponseEnabled: boolean = true) => {
+  const sendVoiceMessage = async (audioBlob: Blob, voiceResponseEnabled: boolean = true, file?: File | null) => {
     const tempUserMsgId = generateId();
     addMessage({
       id: tempUserMsgId,
       text: "🎤 Sending audio...",
       isUser: true,
       timeStamp: Date.now(),
+      ...(file ? { filename: file.name } : {}),
     });
 
     const botMsgId = generateId();
@@ -146,7 +147,14 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
     });
 
     try {
-      const response = await sendVoiceChat(audioBlob, voiceResponseEnabled);
+      let docId = activeDocumentId;
+      if (file) {
+        const uploadRes = await uploadFile(file);
+        docId = uploadRes.document_id;
+        setActiveDocumentId(docId);
+      }
+
+      const response = await sendVoiceChat(audioBlob, voiceResponseEnabled, docId);
 
       setMessages((prev) =>
         prev.map((m) =>

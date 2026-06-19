@@ -7,7 +7,7 @@ import { HiSpeakerWave, HiSpeakerXMark } from "react-icons/hi2";
 
 type ChatInputProps = {
   sendUserMessage: (text: string, file: File | null, ttsEnabled?: boolean) => void;
-  sendVoiceMessage?: (audioBlob: Blob, voiceResponseEnabled?: boolean) => void;
+  sendVoiceMessage?: (audioBlob: Blob, voiceResponseEnabled?: boolean, file?: File | null) => void;
 };
 
 const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage, sendVoiceMessage }) => {
@@ -93,7 +93,6 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage, sendVoiceMessage
       };
 
       mediaRecorder.onstop = () => {
-
         if (audioChunksRef.current.length === 0) {
           console.error('[Recording] No audio data captured!');
           stream.getTracks().forEach(track => track.stop());
@@ -108,7 +107,13 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage, sendVoiceMessage
           return;
         }
 
-        sendVoiceMessage(audioBlob, ttsEnabled);
+        // Capture and clear any pending attachment so it goes with this voice message
+        const pendingFile = attachmentRef.current;
+        attachmentRef.current = null;
+        setFileName(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+
+        sendVoiceMessage(audioBlob, ttsEnabled, pendingFile);
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -222,14 +227,13 @@ const ChatInput: React.FC<ChatInputProps> = ({ sendUserMessage, sendVoiceMessage
           <div>
             <button
               className={`flex h-8 w-8 items-center justify-center rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-1 cursor-pointer ${
-                hasText || attachmentRef.current
+                isRecording || hasText || attachmentRef.current
                   ? "bg-white text-black hover:bg-gray-200"
                   : "bg-neutral-700 text-neutral-400 hover:bg-neutral-600"
               }`}
-              title="Send message"
-              onClick={handleSubmit}
+              title={isRecording ? "Stop recording & send" : "Send message"}
+              onClick={isRecording ? stopRecording : handleSubmit}
               type="button"
-              disabled={isRecording}
             >
               <FiArrowUp size={16} />
             </button>

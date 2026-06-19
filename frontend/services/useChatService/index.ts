@@ -36,10 +36,11 @@ export function useChatService() {
     return await res.text();
   };
 
-  const sendVoiceChat = async (audioBlob: Blob, voiceResponseEnabled: boolean = true): Promise<VoiceChatResponse> => {
+  const sendVoiceChat = async (audioBlob: Blob, voiceResponseEnabled: boolean = true, documentId?: string | null): Promise<VoiceChatResponse> => {
     const fd = new FormData();
     fd.append("file", audioBlob);
     fd.append("include_audio_response", voiceResponseEnabled.toString());
+    if (documentId) fd.append("document_id", documentId);
 
     const res = await fetch("/api/voice-chat", {
       method: "POST",

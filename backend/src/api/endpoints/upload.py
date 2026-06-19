@@ -46,7 +46,6 @@ async def upload_document(file: UploadFile = File(...)):
         # Initialize services
         file_handler = FileHandler()
         azure_storage = AzureStorageService()
-        mongodb_service = MongoDBService()
         enhanced_ocr_service = EnhancedOCRService()
         rag_service = RAGService()
         doc_settings = DocumentSettings()
@@ -144,6 +143,7 @@ async def upload_document(file: UploadFile = File(...)):
 
         # Step 6: Store enhanced metadata in MongoDB (optional - disable if MongoDB not available)
         try:
+            mongodb_service = MongoDBService()
             # Prepare enhanced metadata
             enhanced_metadata = DocumentMetadata(
                 document_id=document_id,
@@ -229,14 +229,8 @@ async def upload_document(file: UploadFile = File(...)):
             except Exception as cleanup_error:
                 logger.error(f"Failed to cleanup blob: {cleanup_error}")
 
-        # Cleanup: Delete MongoDB metadata if it was created
-        if document_id:
-            try:
-                mongodb_service = MongoDBService()
-                await mongodb_service.delete_document_metadata(document_id)
-                logger.info(f"Cleaned up MongoDB metadata after Enhanced OCR failure: {document_id}")
-            except Exception as cleanup_error:
-                logger.error(f"Failed to cleanup MongoDB metadata: {cleanup_error}")
+        # MongoDB cleanup skipped — metadata is only stored after Qdrant succeeds,
+        # so a failure before that point means there is nothing to clean up.
 
         raise HTTPException(
             status_code=500,
