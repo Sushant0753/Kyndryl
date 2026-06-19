@@ -73,14 +73,7 @@ class EnhancedOCRService:
     ) -> Tuple[List[Dict], int, str]:
         """
         Process PDF documents with enhanced text extraction.
-
-        Args:
-            file_content: PDF file content as bytes
-            document_id: UUID for the document
-            filename: Original filename
-
-        Returns:
-            tuple: (chunks_with_metadata, total_pages, 'pdf')
+        Falls back to page-image OCR when the PDF contains no selectable text (scanned PDFs).
         """
         try:
             logger.info(f"Processing PDF document: {filename}")
@@ -93,6 +86,14 @@ class EnhancedOCRService:
             total_pages = extraction_result['total_pages']
             extracted_text = extraction_result['text']
             page_metadata = extraction_result['pages']
+
+            # If text extraction yielded nothing, try OCR on rendered page images
+            if len(extracted_text.strip()) < 50 and self.image_processor.is_available():
+                logger.info(
+                    f"PDF has no selectable text ({len(extracted_text.strip())} chars), "
+                    f"falling back to page-image OCR: {filename}"
+                )
+                return self._ocr_pdf_via_images(file_content, document_id, filename, total_pages)
 
             # Enhanced chunking with context preservation
             chunks_with_metadata = self.chunking_service.create_chunks_with_metadata(
@@ -114,6 +115,64 @@ class EnhancedOCRService:
         except Exception as e:
             logger.error(f"PDF processing failed for {filename}: {e}", exc_info=True)
             raise
+
+    def _ocr_pdf_via_images(
+        self,
+        file_content: bytes,
+        document_id: str,
+        filename: str,
+        total_pages: int
+    ) -> Tuple[List[Dict], int, str]:
+        """
+        Render each PDF page to an image and run Tesseract OCR on it.
+        Used as a fallback for scanned / image-only PDFs.
+        """
+        import fitz  # pymupdf
+
+        doc = fitz.open(stream=file_content, filetype="pdf")
+        all_text_parts = []
+        total_confidence = 0.0
+        page_count = len(doc)
+
+        for page_num in range(page_count):
+            page = doc[page_num]
+            # Render at 2× zoom for better OCR accuracy
+            mat = fitz.Matrix(2, 2)
+            pix = page.get_pixmap(matrix=mat)
+            img_bytes = pix.tobytes("png")
+
+            try:
+                result = self.image_processor.extract_text_with_metadata(img_bytes, f"{filename}_page{page_num + 1}")
+                page_text = result.get('text', '').strip()
+                if page_text:
+                    all_text_parts.append(page_text)
+                total_confidence += result.get('confidence', 0.0)
+                logger.info(f"OCR page {page_num + 1}/{page_count}: {len(page_text)} chars, confidence={result.get('confidence', 0):.1f}%")
+            except Exception as page_err:
+                logger.warning(f"OCR failed for page {page_num + 1}: {page_err}")
+
+        doc.close()
+
+        combined_text = "\n\n".join(all_text_parts)
+        avg_confidence = total_confidence / page_count if page_count > 0 else 0.0
+
+        if not combined_text.strip():
+            raise ValueError(f"OCR could not extract any text from {filename}")
+
+        chunks_with_metadata = self.chunking_service.create_chunks_with_metadata(
+            text=combined_text,
+            document_id=document_id,
+            filename=filename,
+            processing_type='ocr',
+            total_pages=page_count,
+            ocr_confidence=avg_confidence,
+        )
+
+        logger.info(
+            f"Scanned PDF OCR complete: {filename}, pages={page_count}, "
+            f"chunks={len(chunks_with_metadata)}, avg_confidence={avg_confidence:.1f}%"
+        )
+        return chunks_with_metadata, page_count, 'ocr'
 
     def _process_image_document(
         self,
