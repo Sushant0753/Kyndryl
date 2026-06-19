@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://192.168.10.50:7000";
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,7 +12,15 @@ export async function POST(req: NextRequest) {
     }
 
     const backendFormData = new FormData();
-    backendFormData.append("file", file, "voice_message.webm"); 
+    backendFormData.append("file", file, "voice_message.webm");
+
+    // Forward document_id so the backend can use RAG mode when a document is active
+    const documentId = formData.get("document_id");
+    if (documentId) backendFormData.append("document_id", documentId as string);
+
+    // Forward include_audio_response preference
+    const includeAudio = formData.get("include_audio_response");
+    if (includeAudio !== null) backendFormData.append("include_audio_response", includeAudio as string);
 
     const backendRes = await fetch(`${BACKEND_URL}/api/speech/voice-chat`, {
       method: "POST",

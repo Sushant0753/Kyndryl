@@ -35,7 +35,7 @@ export default function ChatPage() {
 
       if (parsed.type === "voice_result") {
         restoreSession(parsed.userText, parsed.botText, parsed.audioUrl);
-      } else if (parsed.text || parsed.type === "text_intent") {
+      } else if (parsed.text) {
         sendUserMessage(
           parsed.text,
           null,
@@ -44,6 +44,7 @@ export default function ChatPage() {
           parsed.documentId
         );
       } else if (parsed.documentId) {
+        // File uploaded without a question — just activate the document context
         setDocumentId(parsed.documentId);
       }
     } catch (err) {
@@ -166,7 +167,7 @@ export default function ChatPage() {
       </div>
       <div className="p-4">
         <ChatInput
-          sendUserMessage={(text, file) => sendUserMessage(text, file)}
+          sendUserMessage={(text, file, ttsEnabled) => sendUserMessage(text, file, ttsEnabled)}
           sendVoiceMessage={sendVoiceMessage}
         />
       </div>

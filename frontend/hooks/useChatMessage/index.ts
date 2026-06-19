@@ -82,6 +82,19 @@ export function useChatMessage(initialMessages: ChatMessage[] = []) {
         setActiveDocumentId(explicitDocId);
       }
 
+      // If there's no query text, just confirm the file upload and stop — don't hit the chat endpoint
+      if (!text.trim()) {
+        const docName = file ? file.name : filenameOverride || "your document";
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === botMsgId
+              ? { ...m, text: `Document "${docName}" is ready. Ask me anything about it!`, isLoading: false }
+              : m
+          )
+        );
+        return;
+      }
+
       const finalDocId = docIdToUse || null;
 
       const rawResponse = await sendMessage(text, finalDocId);
