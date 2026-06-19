@@ -13,6 +13,28 @@ class RAGService:
 
     SBI_COLLECTION_NAME = "SBI_BANK_DATA"
 
+    BANKING_KEYWORDS = frozenset([
+        # Core banking operations
+        "account", "balance", "transaction", "bank", "payment",
+        "deposit", "withdrawal", "statement", "credit", "debit",
+        "ifsc", "micr", "upi", "neft", "rtgs", "swift", "imps",
+        # Identity / KYC documents
+        "pan", "aadhaar", "aadhar", "kyc", "passport",
+        "permanent account",
+        # Loans and finance
+        "loan", "emi", "mortgage", "interest", "finance", "financial",
+        "lender", "borrower", "repayment", "collateral", "sanction",
+        # Insurance
+        "insurance", "premium", "policy", "claim", "maturity", "annuity",
+        # Investments
+        "mutual fund", "fixed deposit", "recurring deposit", "investment",
+        "share", "bond", "equity", "dividend", "portfolio", "fd",
+        # Indian banking specifics
+        "cheque", "demand draft", "atm", "banking", "nbfc", "rbi",
+        "sebi", "income tax", "tds", "gst", "itr", "savings",
+        "current account",
+    ])
+
     def __init__(self):
         self.embedding_service = EmbeddingService()
         self.qdrant_service = QdrantService()
@@ -103,20 +125,41 @@ class RAGService:
                 query_embedding=query_embedding,
                 document_id=document_id,
                 limit=30,
-                score_threshold=0.1
+                score_threshold=0.05
             )
 
+            # If still nothing, try with no threshold to handle meta-questions like "what is this about?"
             if not retrieved_chunks:
-                logger.warning("No relevant information found in documents")
-                no_info_message = "I couldn't find relevant information in the documents to answer your question. Please try rephrasing or ask a different question."
+                logger.info("No chunks above threshold, retrying with score_threshold=0 for meta-questions")
+                retrieved_chunks = self.qdrant_service.search_similar_chunks(
+                    query_embedding=query_embedding,
+                    document_id=document_id,
+                    limit=10,
+                    score_threshold=0
+                )
 
-                # Translate "no info" message if needed
+            if not retrieved_chunks:
+                logger.warning("No chunks found for document — document may not have been indexed")
+                no_info_message = "I couldn't find any content from the uploaded document. It may not have been processed correctly. Please try uploading the document again."
+
                 if detected_language != 'en' and translation_succeeded:
                     translated_message = self.translation_service.translate(no_info_message, 'en', detected_language)
                     if translated_message:
                         no_info_message = translated_message
 
                 return no_info_message, detected_language, sentiment_data
+
+            # Scope guard: reject non-banking documents before calling the LLM
+            if not self._is_banking_document(retrieved_chunks):
+                logger.info("Document rejected: no banking/finance keywords found in chunks")
+                rejection = (
+                    "I'm a banking assistant and can only help with banking and "
+                    "financial documents. The document you uploaded doesn't appear "
+                    "to be banking-related. Please upload a bank statement, loan "
+                    "agreement, insurance policy, PAN card, or other financial "
+                    "document and I'll be happy to help!"
+                )
+                return rejection, detected_language, sentiment_data
 
             # Step 5: Format context
             context = self._format_context(retrieved_chunks)
@@ -234,6 +277,11 @@ class RAGService:
         except Exception as e:
             logger.error(f"Failed to process general query: {e}", exc_info=True)
             raise
+
+    def _is_banking_document(self, chunks: List[Dict]) -> bool:
+        """Return True if any retrieved chunk contains a banking/finance keyword."""
+        combined = " ".join(c.get("text", "") for c in chunks).lower()
+        return any(kw in combined for kw in self.BANKING_KEYWORDS)
 
     def _format_sbi_context(self, chunks: List[Dict]) -> str:
         """
