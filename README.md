@@ -1,6 +1,6 @@
-# Findryl — AI Banking Assistant for Indian Customers
+# FLIQ — AI Banking Assistant for Indian Customers
 
-Findryl is an AI-powered banking assistant built for Indian customers. It answers banking questions in multiple Indian languages, lets users upload their financial documents (bank statements, PAN cards, loan agreements) and ask questions about them, and supports both text and voice interaction.
+FLIQ is an AI-powered banking assistant built for Indian customers. It answers banking questions in multiple Indian languages, lets users upload their financial documents (bank statements, PAN cards, loan agreements) and ask questions about them, and supports both text and voice interaction.
 
 ---
 
